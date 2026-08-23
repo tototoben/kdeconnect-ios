@@ -9,6 +9,11 @@ tracking, a dot overlay, and remote-triggered feedback (vibrate/beep/pulse).
 Reference diff: Android fork vs upstream (station MQTT contract, VisitorTracker,
 VisitorDotView, YES/NO buttons, immersive layout).
 
+See [AGENTS.md](AGENTS.md) for agent working notes: build/lint commands,
+the Android reference checkout at `../kdeconnect-android`, and using
+[XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP) (MCP server + CLI
+for builds, simulator runs, log capture) during implementation and testing.
+
 ## Target repository
 
 Work lands in a personal GitHub fork, mirroring how the Android project is managed:
@@ -108,6 +113,8 @@ frame-in-flight guard. Vision face rectangles request. Port state machine verbat
 
 ### Phase 6 — Verification
 - Build all targets for iOS Simulator; run SwiftLint (repo `.swiftlint.yml`)
+- Prefer XcodeBuildMCP (see AGENTS.md) for simulator builds, launching the app,
+  and capturing logs while stepping through this checklist
 - Manual contract test against real broker with `mosquitto_pub`/`mosquitto_sub`:
   - Press YES/NO → events on `station/<id>/ui/event` with correct payload
   - Send each control action (`set_ui`, `reset`, feedback variants) → UI reacts
