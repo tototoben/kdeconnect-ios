@@ -40,9 +40,9 @@ struct TwoFingerTapView: UIViewRepresentable {
         let iconView: UIImageView = UIImageView()
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.image = UIImage(systemName: "hand.tap")
-        iconView.tintColor = .secondarySystemFill
+        iconView.tintColor = .systemGray
         iconView.contentMode = .scaleAspectFit
-        iconView.alpha = 0.5
+        iconView.alpha = 0.8
         view.addSubview(iconView)
 
         NSLayoutConstraint.activate([
@@ -51,6 +51,15 @@ struct TwoFingerTapView: UIViewRepresentable {
             iconView.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.3),
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
         ])
+
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 0.5
+        pulse.toValue = 0.9
+        pulse.duration = 1.5
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        iconView.layer.add(pulse, forKey: "brightnessPulse")
 
         return view
     }
