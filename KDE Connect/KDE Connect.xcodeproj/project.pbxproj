@@ -104,6 +104,7 @@
 		DB8E559E2815961200101059 /* iOS14+FocusState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8E559D2815961200101059 /* iOS14+FocusState.swift */; };
 		STA000012680000100CC21DD /* StationRemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000012680000000CC21DD /* StationRemoteView.swift */; };
 		STA000022680000500CC21DD /* StationMqttClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000022680000600CC21DD /* StationMqttClient.swift */; };
+		STA000032680000700CC21DD /* StationCameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000032680000800CC21DD /* StationCameraManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -237,6 +238,7 @@
 		DB8E559D2815961200101059 /* iOS14+FocusState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "iOS14+FocusState.swift"; sourceTree = "<group>"; };
 		STA000012680000000CC21DD /* StationRemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationRemoteView.swift; sourceTree = "<group>"; };
 		STA000022680000600CC21DD /* StationMqttClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationMqttClient.swift; sourceTree = "<group>"; };
+		STA000032680000800CC21DD /* StationCameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationCameraManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -421,6 +423,7 @@
 			children = (
 				STA000012680000000CC21DD /* StationRemoteView.swift */,
 				STA000022680000600CC21DD /* StationMqttClient.swift */,
+				STA000032680000800CC21DD /* StationCameraManager.swift */,
 			);
 			path = Station;
 			sourceTree = "<group>";
@@ -874,6 +877,7 @@
 				A0D76FCC26E6B034009D9B03 /* RemoteInputView.swift in Sources */,
 				STA000012680000100CC21DD /* StationRemoteView.swift in Sources */,
 				STA000022680000500CC21DD /* StationMqttClient.swift in Sources */,
+				STA000032680000700CC21DD /* StationCameraManager.swift in Sources */,
 				D2A8720E282C95D700DE980E /* DeviceDiscoveryHelp.swift in Sources */,
 				D271710929F07E51000CDB7F /* FilesHelper.swift in Sources */,
 				D2E60C4129FDB06000502F07 /* SetupFileTransfersForUITests.swift in Sources */,

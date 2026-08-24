@@ -5,7 +5,6 @@
  */
 
 import AudioToolbox
-import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -20,9 +19,10 @@ struct StationRemoteView: View {
     @State private var noEnabled: Bool = true
     @State private var pulse: Bool = false
     @State private var showingSettings: Bool = false
-    @State private var videoRecorder: SilentVideoRecorder?
+    @State private var cameraManager: StationCameraManager?
     @State private var mqttCoordinator: MqttCoordinator?
     @State private var mqttLog: [String] = []
+    @State private var logPaused: Bool = false
 
     @State private var previousHorizontalDragOffset: Float = 0.0
     @State private var previousVerticalDragOffset: Float = 0.0
@@ -95,13 +95,25 @@ struct StationRemoteView: View {
             }
 
             if settings.stationMqttDebug {
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(logPaused ? "LOGS (paused)" : "LOGS")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.green.opacity(0.6))
+                        Spacer()
+                        Button(action: { logPaused.toggle() }) {
+                            Image(systemName: logPaused ? "play.fill" : "pause.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.green.opacity(0.6))
+                                .padding(4)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+
                     ScrollView {
                         VStack(alignment: .leading, spacing: 2) {
-                            ForEach(mqttLog.indices, id: \.self) { index in
-                                Text(mqttLog[index])
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.green.opacity(0.8))
+                            ForEach(mqttLog.indices.reversed(), id: \.self) { index in
+                                logText(for: mqttLog[index])
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
@@ -113,7 +125,7 @@ struct StationRemoteView: View {
                     .padding(.horizontal, 8)
                     .padding(.bottom, 130)
                 }
-                .allowsHitTesting(false)
+                .allowsHitTesting(logPaused)
             }
 
             VStack {
@@ -144,7 +156,6 @@ struct StationRemoteView: View {
                     }
                 }
             }
-            videoRecorder = SilentVideoRecorder(uploadUrl: settings.stationUploadUrl, onLog: logCallback)
             let coordinator = MqttCoordinator(
                 brokerUri: settings.stationBrokerUri,
                 stationId: settings.stationId,
@@ -154,13 +165,19 @@ struct StationRemoteView: View {
                 onLog: logCallback
             )
             mqttCoordinator = coordinator
+            let camera = StationCameraManager(
+                uploadUrl: settings.stationUploadUrl,
+                listener: coordinator,
+                onLog: logCallback
+            )
+            cameraManager = camera
             coordinator.connect()
         }
         .onDisappear {
             mqttCoordinator?.disconnect()
             mqttCoordinator = nil
-            videoRecorder?.stop()
-            videoRecorder = nil
+            cameraManager?.stop()
+            cameraManager = nil
         }
         .onChange(of: scenePhase) { phase in
             switch phase {
@@ -270,7 +287,7 @@ struct StationRemoteView: View {
             }
         } else if action == "take_photo" {
             DispatchQueue.main.async {
-                videoRecorder?.record(duration: 3.0)
+                cameraManager?.record(duration: 3.0)
             }
         }
 
@@ -306,9 +323,115 @@ struct StationRemoteView: View {
             }
         }
     }
+
+    private func logColor(for entry: String) -> Color {
+        if entry.contains("error") || entry.contains("failed") {
+            return Color(red: 0.9, green: 0.3, blue: 0.3)
+        }
+        if entry.hasPrefix("-> ") {
+            return Color(red: 0.3, green: 0.8, blue: 0.9)
+        }
+        if entry.hasPrefix("<- ") {
+            return Color(red: 0.9, green: 0.85, blue: 0.3)
+        }
+        if entry.hasPrefix("CONNECT") || entry.hasPrefix("DISCONNECT") {
+            return Color(red: 0.3, green: 0.5, blue: 0.9)
+        }
+        if entry.hasPrefix("VISITOR") {
+            return Color(red: 0.3, green: 0.85, blue: 0.3)
+        }
+        if entry.hasPrefix("CAMERA") {
+            return Color(red: 0.3, green: 0.7, blue: 0.3)
+        }
+        if entry.hasPrefix("REC") {
+            return Color(red: 0.9, green: 0.6, blue: 0.2)
+        }
+        if entry.hasPrefix("UPLOAD") {
+            return Color(red: 0.7, green: 0.4, blue: 0.9)
+        }
+        return Color(red: 0.3, green: 0.8, blue: 0.3)
+    }
+
+    private func logText(for entry: String) -> Text {
+        let font = Font.system(size: 10, design: .monospaced)
+
+        guard let braceIndex = entry.firstIndex(of: "{"),
+              braceIndex > entry.startIndex else {
+            return Text(entry)
+                .font(font)
+                .foregroundColor(logColor(for: entry))
+        }
+
+        let prefix = String(entry[entry.startIndex..<braceIndex])
+        let json = String(entry[braceIndex...])
+
+        let prefixText = Text(prefix)
+            .font(font)
+            .foregroundColor(logColor(for: entry))
+
+        return prefixText + highlightJSONText(json, font: font)
+    }
+
+    private func highlightJSONText(_ json: String, font: Font) -> Text {
+        let keyColor = Color(red: 0.4, green: 0.7, blue: 0.9)
+        let stringColor = Color(red: 0.8, green: 0.8, blue: 0.4)
+        let numberColor = Color(red: 0.9, green: 0.6, blue: 0.5)
+        let boolColor = Color(red: 0.9, green: 0.5, blue: 0.6)
+        let nullColor = Color(red: 0.6, green: 0.6, blue: 0.6)
+        let punctColor = Color(red: 0.5, green: 0.5, blue: 0.5)
+
+        var result = Text("")
+        var i = json.startIndex
+
+        while i < json.endIndex {
+            let ch = json[i]
+
+            if ch == "{" || ch == "}" || ch == "[" || ch == "]" || ch == "," || ch == ":" {
+                result = result + Text(String(ch)).font(font).foregroundColor(punctColor)
+                i = json.index(after: i)
+            } else if ch == "\"" {
+                let stringStart = i
+                i = json.index(after: i)
+                while i < json.endIndex && json[i] != "\"" {
+                    if json[i] == "\\" && json.index(after: i) < json.endIndex {
+                        i = json.index(after: i)
+                    }
+                    i = json.index(after: i)
+                }
+                if i < json.endIndex { i = json.index(after: i) }
+                let stringContent = String(json[stringStart..<i])
+
+                var nextNonSpace = i
+                while nextNonSpace < json.endIndex && json[nextNonSpace] == " " {
+                    nextNonSpace = json.index(after: nextNonSpace)
+                }
+                let isKey = nextNonSpace < json.endIndex && json[nextNonSpace] == ":"
+
+                result = result + Text(stringContent).font(font).foregroundColor(isKey ? keyColor : stringColor)
+            } else if ch.isNumber || (ch == "-" && json.index(after: i) < json.endIndex && json[json.index(after: i)].isNumber) {
+                let numStart = i
+                while i < json.endIndex && (json[i].isNumber || json[i] == "." || json[i] == "-" || json[i] == "e" || json[i] == "E" || json[i] == "+") {
+                    i = json.index(after: i)
+                }
+                result = result + Text(String(json[numStart..<i])).font(font).foregroundColor(numberColor)
+            } else if ch == "t" || ch == "f" {
+                let wordStart = i
+                while i < json.endIndex && json[i].isLetter { i = json.index(after: i) }
+                result = result + Text(String(json[wordStart..<i])).font(font).foregroundColor(boolColor)
+            } else if ch == "n" {
+                let wordStart = i
+                while i < json.endIndex && json[i].isLetter { i = json.index(after: i) }
+                result = result + Text(String(json[wordStart..<i])).font(font).foregroundColor(nullColor)
+            } else {
+                result = result + Text(String(ch)).font(font).foregroundColor(punctColor)
+                i = json.index(after: i)
+            }
+        }
+        return result
+    }
 }
 
-final class MqttCoordinator: StationMqttListener {
+final class MqttCoordinator: StationMqttListener, StationCameraListener {
     private var client: StationMqttClient?
     private let brokerUri: String
     private let stationId: String
@@ -345,7 +468,7 @@ final class MqttCoordinator: StationMqttListener {
         let payload = event.payload()
         if let data = try? JSONSerialization.data(withJSONObject: payload),
            let json = String(data: data, encoding: .utf8) {
-            onLog?("→ \(json)")
+            onLog?("-> \(json)")
         }
         client?.publishEvent(event)
     }
@@ -353,134 +476,26 @@ final class MqttCoordinator: StationMqttListener {
     func onControlMessage(_ control: [String: Any]) {
         if let data = try? JSONSerialization.data(withJSONObject: control),
            let json = String(data: data, encoding: .utf8) {
-            onLog?("← \(json)")
+            onLog?("<- \(json)")
         }
         onControl(control)
     }
-}
 
-final class SilentVideoRecorder: NSObject, AVCaptureFileOutputRecordingDelegate {
-    private let session = AVCaptureSession()
-    private let movieOutput = AVCaptureMovieFileOutput()
-    private let sessionQueue = DispatchQueue(label: "station.video.recorder")
-    private var isConfigured = false
-    private let uploadUrl: String
-    private var onLog: ((String) -> Void)?
+    // MARK: - StationCameraListener
 
-    init(uploadUrl: String, onLog: ((String) -> Void)? = nil) {
-        self.uploadUrl = uploadUrl
-        self.onLog = onLog
-        super.init()
-        sessionQueue.async { [weak self] in
-            self?.configureSession()
-        }
+    func onVisitorEntered(side: String, distance: StationDistance) {
+        publishEvent(.visitorEntered(side: side, distance: distance))
     }
 
-    private func configureSession() {
-        session.beginConfiguration()
-        session.sessionPreset = .medium
-
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
-              let cameraInput = try? AVCaptureDeviceInput(device: camera),
-              session.canAddInput(cameraInput) else {
-            session.commitConfiguration()
-            return
-        }
-        session.addInput(cameraInput)
-
-        if let audio = AVCaptureDevice.default(for: .audio),
-           let audioInput = try? AVCaptureDeviceInput(device: audio),
-           session.canAddInput(audioInput) {
-            session.addInput(audioInput)
-        }
-
-        if session.canAddOutput(movieOutput) {
-            session.addOutput(movieOutput)
-        }
-
-        session.commitConfiguration()
-        isConfigured = true
+    func onVisitorDistanceChanged(distance: StationDistance) {
+        publishEvent(.visitorDistanceChanged(distance: distance))
     }
 
-    func record(duration: TimeInterval) {
-        onLog?("REC start \(duration)s")
-        sessionQueue.async { [weak self] in
-            guard let self = self, self.isConfigured else { return }
-            if !self.session.isRunning {
-                self.session.startRunning()
-            }
-            guard let connection = self.movieOutput.connection(with: .video) else { return }
-            connection.videoOrientation = .portrait
-
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("station_\(Int(Date().timeIntervalSince1970)).mov")
-
-            self.movieOutput.startRecording(to: url, recordingDelegate: self)
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-                self?.stop()
-            }
-        }
+    func onVisitorApproached() {
+        publishEvent(.visitorApproached)
     }
 
-    func stop() {
-        sessionQueue.async { [weak self] in
-            guard let self = self else { return }
-            if self.movieOutput.isRecording {
-                self.movieOutput.stopRecording()
-            }
-            if self.session.isRunning {
-                self.session.stopRunning()
-            }
-        }
-    }
-
-    // MARK: - AVCaptureFileOutputRecordingDelegate
-
-    func fileOutput(
-        _ output: AVCaptureFileOutput,
-        didFinishRecordingTo outputFileURL: URL,
-        from connections: [AVCaptureConnection],
-        error: Error?
-    ) {
-        if let error = error {
-            onLog?("REC error: \(error.localizedDescription)")
-            return
-        }
-        let size = (try? FileManager.default.attributesOfItem(atPath: outputFileURL.path)[.size] as? Int) ?? 0
-        onLog?("REC done \(outputFileURL.lastPathComponent) \(size) bytes")
-        UISaveVideoAtPathToSavedPhotosAlbum(outputFileURL.path, nil, nil, nil)
-        uploadVideo(at: outputFileURL)
-    }
-
-    private func uploadVideo(at fileURL: URL) {
-        guard let url = URL(string: uploadUrl) else {
-            onLog?("UPLOAD invalid URL: \(uploadUrl)")
-            return
-        }
-        onLog?("UPLOAD → \(uploadUrl)")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        let boundary = "station-\(UUID().uuidString)"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        let filename = fileURL.lastPathComponent
-        var body = Data()
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: video/quicktime\r\n\r\n".data(using: .utf8)!)
-        if let fileData = try? Data(contentsOf: fileURL) {
-            body.append(fileData)
-        }
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
-
-        URLSession.shared.uploadTask(with: request, from: body) { [weak self] _, response, error in
-            if let error = error {
-                self?.onLog?("UPLOAD error: \(error.localizedDescription)")
-            } else if let http = response as? HTTPURLResponse {
-                self?.onLog?("UPLOAD \(http.statusCode) \(filename)")
-            }
-            try? FileManager.default.removeItem(at: fileURL)
-        }.resume()
+    func onVisitorLeft() {
+        publishEvent(.visitorLeft)
     }
 }
