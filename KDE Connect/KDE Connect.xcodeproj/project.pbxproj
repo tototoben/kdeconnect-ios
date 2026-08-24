@@ -103,6 +103,7 @@
 		D2FBA1F9277179A300EBA686 /* CocoaAsyncSocket in Frameworks */ = {isa = PBXBuildFile; productRef = D2FBA1F8277179A300EBA686 /* CocoaAsyncSocket */; };
 		DB8E559E2815961200101059 /* iOS14+FocusState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8E559D2815961200101059 /* iOS14+FocusState.swift */; };
 		STA000012680000100CC21DD /* StationRemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000012680000000CC21DD /* StationRemoteView.swift */; };
+		STA000022680000500CC21DD /* StationMqttClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000022680000600CC21DD /* StationMqttClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -235,6 +236,7 @@
 		D2F7776727C99901008F20A1 /* fastlane */ = {isa = PBXFileReference; lastKnownFileType = folder; path = fastlane; sourceTree = "<group>"; };
 		DB8E559D2815961200101059 /* iOS14+FocusState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "iOS14+FocusState.swift"; sourceTree = "<group>"; };
 		STA000012680000000CC21DD /* StationRemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationRemoteView.swift; sourceTree = "<group>"; };
+		STA000022680000600CC21DD /* StationMqttClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationMqttClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -418,6 +420,7 @@
 			isa = PBXGroup;
 			children = (
 				STA000012680000000CC21DD /* StationRemoteView.swift */,
+				STA000022680000600CC21DD /* StationMqttClient.swift */,
 			);
 			path = Station;
 			sourceTree = "<group>";
@@ -702,6 +705,7 @@
 				D2FBA1F8277179A300EBA686 /* CocoaAsyncSocket */,
 				D2FAF12627D2E78900658753 /* Introspect */,
 				D21A100729B878B800CE02F8 /* OrderedCollections */,
+				STA000022680000400CC21DD /* CocoaMQTT */,
 			);
 			productName = "KDE Connect Test";
 			productReference = A0A0442C267BF38700CC21DD /* KDE Connect.app */;
@@ -783,6 +787,7 @@
 				D2FAF12527D2E78900658753 /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */,
 				D21A100629B878B800CE02F8 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				D2D7AB82298C8EA600AB490B /* XCRemoteSwiftPackageReference "SwiftLint" */,
+				STA000022680000300CC21DD /* XCRemoteSwiftPackageReference "CocoaMQTT" */,
 			);
 			productRefGroup = A0A0442D267BF38700CC21DD /* Products */;
 			projectDirPath = "";
@@ -868,6 +873,7 @@
 				A0A0445B267BF40400CC21DD /* DevicesView.swift in Sources */,
 				A0D76FCC26E6B034009D9B03 /* RemoteInputView.swift in Sources */,
 				STA000012680000100CC21DD /* StationRemoteView.swift in Sources */,
+				STA000022680000500CC21DD /* StationMqttClient.swift in Sources */,
 				D2A8720E282C95D700DE980E /* DeviceDiscoveryHelp.swift in Sources */,
 				D271710929F07E51000CDB7F /* FilesHelper.swift in Sources */,
 				D2E60C4129FDB06000502F07 /* SetupFileTransfersForUITests.swift in Sources */,
@@ -1335,6 +1341,14 @@
 				revision = be208949f83e0315ee736a1cf9d0e86a47e2038e;
 			};
 		};
+		STA000022680000300CC21DD /* XCRemoteSwiftPackageReference "CocoaMQTT" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/emqx/CocoaMQTT.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 2.4.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1367,6 +1381,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D2FBA1F6277178A000EBA686 /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */;
 			productName = CocoaAsyncSocket;
+		};
+		STA000022680000400CC21DD /* CocoaMQTT */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = STA000022680000300CC21DD /* XCRemoteSwiftPackageReference "CocoaMQTT" */;
+			productName = CocoaMQTT;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

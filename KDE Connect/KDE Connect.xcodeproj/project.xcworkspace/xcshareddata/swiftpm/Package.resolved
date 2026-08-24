@@ -1,5 +1,5 @@
 {
-  "originHash" : "879e9f702e565f4fc2388e98c5314870dbde21c7db15f8bc4631a1cbccffd8da",
+  "originHash" : "d1e509b9c7f3e7f2a87807a4434d97d314aaab9602e0d96c545cec9dce33d503",
   "pins" : [
     {
       "identity" : "cocoaasyncsocket",
@@ -7,6 +7,15 @@
       "location" : "https://github.com/ApolloZhu/CocoaAsyncSocket",
       "state" : {
         "revision" : "be208949f83e0315ee736a1cf9d0e86a47e2038e"
+      }
+    },
+    {
+      "identity" : "cocoamqtt",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/emqx/CocoaMQTT.git",
+      "state" : {
+        "revision" : "378ecda142878b2cc414b4b7cb39f8b3e7ceb814",
+        "version" : "2.4.0"
       }
     },
     {
@@ -28,6 +37,15 @@
       }
     },
     {
+      "identity" : "mqttcocoaasyncsocket",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leeway1208/MqttCocoaAsyncSocket",
+      "state" : {
+        "revision" : "ce3e18607fd01079495f86ff6195d8a3ca469f73",
+        "version" : "1.0.8"
+      }
+    },
+    {
       "identity" : "openssl",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/krzyzanowskim/OpenSSL.git",
@@ -43,6 +61,15 @@
       "state" : {
         "revision" : "fd4df99170f5e9d7cf9aa8312aa8506e0e7a44e7",
         "version" : "0.35.0"
+      }
+    },
+    {
+      "identity" : "starscream",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/daltoniam/Starscream.git",
+      "state" : {
+        "revision" : "c6bfd1af48efcc9a9ad203665db12375ba6b145a",
+        "version" : "4.0.8"
       }
     },
     {

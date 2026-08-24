@@ -90,6 +90,12 @@ struct SettingsView: View {
                         .labelStyle(.accessibilityTitleOnly)
                         .accentColor(.primary)
                 }
+
+                Toggle(isOn: $kdeConnectSettingsForSettings.stationMqttDebug) {
+                    Label("Show MQTT Traffic", systemImage: "antenna.radiowaves.left.and.right")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                }
             }
 
             Section(header: Text("Information")) {

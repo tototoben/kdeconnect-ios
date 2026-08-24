@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
  */
 
+import AudioToolbox
 import SwiftUI
 import UIKit
 
@@ -18,6 +19,8 @@ struct StationRemoteView: View {
     @State private var noEnabled: Bool = true
     @State private var pulse: Bool = false
     @State private var showingSettings: Bool = false
+    @State private var mqttCoordinator: MqttCoordinator?
+    @State private var mqttLog: [String] = []
 
     @State private var previousHorizontalDragOffset: Float = 0.0
     @State private var previousVerticalDragOffset: Float = 0.0
@@ -89,15 +92,37 @@ struct StationRemoteView: View {
                 .frame(height: 120)
             }
 
+            if settings.stationMqttDebug {
+                VStack(alignment: .leading, spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(mqttLog.indices, id: \.self) { index in
+                                Text(mqttLog[index])
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.green.opacity(0.8))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .background(Color.black.opacity(0.7))
+                    .cornerRadius(8)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 130)
+                }
+                .allowsHitTesting(false)
+            }
+
             VStack {
                 HStack {
+                    Spacer()
                     Button(action: { showingSettings = true }, label: {
                         Image(systemName: "gearshape")
                             .font(.title2)
                             .foregroundColor(.gray)
                             .padding(8)
                     })
-                    Spacer()
                 }
                 .padding(.top, 8)
                 Spacer()
@@ -108,9 +133,41 @@ struct StationRemoteView: View {
         .fullScreenCover(isPresented: $showingSettings) {
             MainTabView()
         }
+        .onAppear {
+            let coordinator = MqttCoordinator(
+                brokerUri: settings.stationBrokerUri,
+                stationId: settings.stationId
+            ) { control in
+                    handleControlMessage(control)
+            } onLog: { entry in
+                DispatchQueue.main.async {
+                    mqttLog.append(entry)
+                    if mqttLog.count > 50 {
+                        mqttLog.removeFirst(mqttLog.count - 50)
+                    }
+                }
+            }
+            mqttCoordinator = coordinator
+            coordinator.connect()
+        }
+        .onDisappear {
+            mqttCoordinator?.disconnect()
+            mqttCoordinator = nil
+        }
+        .onChange(of: scenePhase) { phase in
+            switch phase {
+            case .active:
+                mqttCoordinator?.connect()
+            case .background, .inactive:
+                mqttCoordinator?.disconnect()
+            @unknown default:
+                break
+            }
+        }
     }
 
     private func sendYes() {
+        mqttCoordinator?.publishEvent(.yes)
         guard let deviceId = targetDeviceId,
               let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
         else { return }
@@ -121,6 +178,7 @@ struct StationRemoteView: View {
     }
 
     private func sendNo() {
+        mqttCoordinator?.publishEvent(.no)
         guard let deviceId = targetDeviceId,
               let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
         else { return }
@@ -176,5 +234,115 @@ struct StationRemoteView: View {
             }
         }
         return nil
+    }
+
+    private func handleControlMessage(_ control: [String: Any]) {
+        let action = control["action"] as? String ?? ""
+
+        if action == "reset" {
+            DispatchQueue.main.async {
+                yesLabel = "YES"
+                noLabel = "NO"
+                yesEnabled = true
+                noEnabled = true
+            }
+        } else if action == "set_ui" {
+            if let yes = control["yes"] as? String, yes.count <= 32 {
+                DispatchQueue.main.async { yesLabel = yes }
+            }
+            // swiftlint:disable:next identifier_name
+            if let no = control["no"] as? String, no.count <= 32 {
+                DispatchQueue.main.async { noLabel = no }
+            }
+            if let yesEn = control["yesEnabled"] as? Bool {
+                DispatchQueue.main.async { yesEnabled = yesEn }
+            }
+            if let noEn = control["noEnabled"] as? Bool {
+                DispatchQueue.main.async { noEnabled = noEn }
+            }
+        }
+
+        if let feedback = control["feedback"] as? [String: Any] {
+            applyFeedback(feedback)
+        }
+    }
+
+    private func applyFeedback(_ feedback: [String: Any]) {
+        if let vibrateMs = feedback["vibrateMs"] as? Int, vibrateMs > 0 {
+            let clamped = min(vibrateMs, 1000)
+            DispatchQueue.main.async {
+                let generator = UIImpactFeedbackGenerator(style: .heavy)
+                generator.impactOccurred()
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(clamped) / 1000.0) {
+                    generator.impactOccurred()
+                }
+            }
+        }
+
+        if feedback["sound"] as? String == "beep" {
+            DispatchQueue.main.async {
+                AudioServicesPlaySystemSound(1057)
+            }
+        }
+
+        if feedback["animation"] as? String == "pulse" {
+            DispatchQueue.main.async {
+                pulse = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    pulse = false
+                }
+            }
+        }
+    }
+}
+
+final class MqttCoordinator: StationMqttListener {
+    private var client: StationMqttClient?
+    private let brokerUri: String
+    private let stationId: String
+    private let onControl: ([String: Any]) -> Void
+    private var onLog: ((String) -> Void)?
+
+    init(
+        brokerUri: String,
+        stationId: String,
+        onControl: @escaping ([String: Any]) -> Void,
+        onLog: ((String) -> Void)? = nil
+    ) {
+        self.brokerUri = brokerUri
+        self.stationId = stationId
+        self.onControl = onControl
+        self.onLog = onLog
+    }
+
+    func connect() {
+        guard client == nil else { return }
+        let client = StationMqttClient(brokerUri: brokerUri, stationId: stationId, listener: self)
+        self.client = client
+        client.connect()
+        onLog?("CONNECT \(brokerUri) station=\(stationId)")
+    }
+
+    func disconnect() {
+        client?.disconnect()
+        client = nil
+        onLog?("DISCONNECT")
+    }
+
+    func publishEvent(_ event: StationEvent) {
+        let payload = event.payload()
+        if let data = try? JSONSerialization.data(withJSONObject: payload),
+           let json = String(data: data, encoding: .utf8) {
+            onLog?("→ \(json)")
+        }
+        client?.publishEvent(event)
+    }
+
+    func onControlMessage(_ control: [String: Any]) {
+        if let data = try? JSONSerialization.data(withJSONObject: control),
+           let json = String(data: data, encoding: .utf8) {
+            onLog?("← \(json)")
+        }
+        onControl(control)
     }
 }
