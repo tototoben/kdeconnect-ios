@@ -5,6 +5,7 @@
  */
 
 import AudioToolbox
+import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -19,6 +20,7 @@ struct StationRemoteView: View {
     @State private var noEnabled: Bool = true
     @State private var pulse: Bool = false
     @State private var showingSettings: Bool = false
+    @State private var videoRecorder: SilentVideoRecorder?
     @State private var mqttCoordinator: MqttCoordinator?
     @State private var mqttLog: [String] = []
 
@@ -134,12 +136,7 @@ struct StationRemoteView: View {
             MainTabView()
         }
         .onAppear {
-            let coordinator = MqttCoordinator(
-                brokerUri: settings.stationBrokerUri,
-                stationId: settings.stationId
-            ) { control in
-                    handleControlMessage(control)
-            } onLog: { entry in
+            let logCallback: (String) -> Void = { entry in
                 DispatchQueue.main.async {
                     mqttLog.append(entry)
                     if mqttLog.count > 50 {
@@ -147,12 +144,23 @@ struct StationRemoteView: View {
                     }
                 }
             }
+            videoRecorder = SilentVideoRecorder(uploadUrl: settings.stationUploadUrl, onLog: logCallback)
+            let coordinator = MqttCoordinator(
+                brokerUri: settings.stationBrokerUri,
+                stationId: settings.stationId,
+                onControl: { control in
+                    handleControlMessage(control)
+                },
+                onLog: logCallback
+            )
             mqttCoordinator = coordinator
             coordinator.connect()
         }
         .onDisappear {
             mqttCoordinator?.disconnect()
             mqttCoordinator = nil
+            videoRecorder?.stop()
+            videoRecorder = nil
         }
         .onChange(of: scenePhase) { phase in
             switch phase {
@@ -260,6 +268,10 @@ struct StationRemoteView: View {
             if let noEn = control["noEnabled"] as? Bool {
                 DispatchQueue.main.async { noEnabled = noEn }
             }
+        } else if action == "take_photo" {
+            DispatchQueue.main.async {
+                videoRecorder?.record(duration: 3.0)
+            }
         }
 
         if let feedback = control["feedback"] as? [String: Any] {
@@ -344,5 +356,131 @@ final class MqttCoordinator: StationMqttListener {
             onLog?("← \(json)")
         }
         onControl(control)
+    }
+}
+
+final class SilentVideoRecorder: NSObject, AVCaptureFileOutputRecordingDelegate {
+    private let session = AVCaptureSession()
+    private let movieOutput = AVCaptureMovieFileOutput()
+    private let sessionQueue = DispatchQueue(label: "station.video.recorder")
+    private var isConfigured = false
+    private let uploadUrl: String
+    private var onLog: ((String) -> Void)?
+
+    init(uploadUrl: String, onLog: ((String) -> Void)? = nil) {
+        self.uploadUrl = uploadUrl
+        self.onLog = onLog
+        super.init()
+        sessionQueue.async { [weak self] in
+            self?.configureSession()
+        }
+    }
+
+    private func configureSession() {
+        session.beginConfiguration()
+        session.sessionPreset = .medium
+
+        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
+              let cameraInput = try? AVCaptureDeviceInput(device: camera),
+              session.canAddInput(cameraInput) else {
+            session.commitConfiguration()
+            return
+        }
+        session.addInput(cameraInput)
+
+        if let audio = AVCaptureDevice.default(for: .audio),
+           let audioInput = try? AVCaptureDeviceInput(device: audio),
+           session.canAddInput(audioInput) {
+            session.addInput(audioInput)
+        }
+
+        if session.canAddOutput(movieOutput) {
+            session.addOutput(movieOutput)
+        }
+
+        session.commitConfiguration()
+        isConfigured = true
+    }
+
+    func record(duration: TimeInterval) {
+        onLog?("REC start \(duration)s")
+        sessionQueue.async { [weak self] in
+            guard let self = self, self.isConfigured else { return }
+            if !self.session.isRunning {
+                self.session.startRunning()
+            }
+            guard let connection = self.movieOutput.connection(with: .video) else { return }
+            connection.videoOrientation = .portrait
+
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("station_\(Int(Date().timeIntervalSince1970)).mov")
+
+            self.movieOutput.startRecording(to: url, recordingDelegate: self)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+                self?.stop()
+            }
+        }
+    }
+
+    func stop() {
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            if self.movieOutput.isRecording {
+                self.movieOutput.stopRecording()
+            }
+            if self.session.isRunning {
+                self.session.stopRunning()
+            }
+        }
+    }
+
+    // MARK: - AVCaptureFileOutputRecordingDelegate
+
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didFinishRecordingTo outputFileURL: URL,
+        from connections: [AVCaptureConnection],
+        error: Error?
+    ) {
+        if let error = error {
+            onLog?("REC error: \(error.localizedDescription)")
+            return
+        }
+        let size = (try? FileManager.default.attributesOfItem(atPath: outputFileURL.path)[.size] as? Int) ?? 0
+        onLog?("REC done \(outputFileURL.lastPathComponent) \(size) bytes")
+        UISaveVideoAtPathToSavedPhotosAlbum(outputFileURL.path, nil, nil, nil)
+        uploadVideo(at: outputFileURL)
+    }
+
+    private func uploadVideo(at fileURL: URL) {
+        guard let url = URL(string: uploadUrl) else {
+            onLog?("UPLOAD invalid URL: \(uploadUrl)")
+            return
+        }
+        onLog?("UPLOAD → \(uploadUrl)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        let boundary = "station-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let filename = fileURL.lastPathComponent
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: video/quicktime\r\n\r\n".data(using: .utf8)!)
+        if let fileData = try? Data(contentsOf: fileURL) {
+            body.append(fileData)
+        }
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        URLSession.shared.uploadTask(with: request, from: body) { [weak self] _, response, error in
+            if let error = error {
+                self?.onLog?("UPLOAD error: \(error.localizedDescription)")
+            } else if let http = response as? HTTPURLResponse {
+                self?.onLog?("UPLOAD \(http.statusCode) \(filename)")
+            }
+            try? FileManager.default.removeItem(at: fileURL)
+        }.resume()
     }
 }

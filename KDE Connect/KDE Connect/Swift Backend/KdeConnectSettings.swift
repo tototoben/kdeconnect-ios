@@ -156,6 +156,12 @@ class KdeConnectSettings: NSObject, ObservableObject {
             UserDefaults.standard.set(stationMqttDebug, forKey: "stationMqttDebug")
         }
     }
+
+    @Published var stationUploadUrl: String {
+        didSet {
+            UserDefaults.standard.set(stationUploadUrl, forKey: "stationUploadUrl")
+        }
+    }
     
     /// Intentionally not persisted
     @Published var isDebugging: Bool
@@ -172,6 +178,7 @@ class KdeConnectSettings: NSObject, ObservableObject {
             "stationId": "1",
             "launchIntoStationMode": true,
             "stationMqttDebug": false,
+            "stationUploadUrl": "http://b310-mac:8080/upload",
             "directIPs": ["192.168.88.193"],
         ])
 #if !os(macOS)
@@ -188,6 +195,7 @@ class KdeConnectSettings: NSObject, ObservableObject {
         self.stationTargetDeviceId = UserDefaults.standard.string(forKey: "stationTargetDeviceId")
         self.launchIntoStationMode = UserDefaults.standard.object(forKey: "launchIntoStationMode") as? Bool ?? true
         self.stationMqttDebug = UserDefaults.standard.bool(forKey: "stationMqttDebug")
+        self.stationUploadUrl = UserDefaults.standard.string(forKey: "stationUploadUrl") ?? "http://b310-mac:8080/upload"
         self.appIcon = AppIcon(rawValue: UserDefaults.standard.string(forKey: "appIcon")) ?? .default
         self.savePhotosToPhotosLibrary = UserDefaults.standard.bool(forKey: "savePhotosToPhotosLibrary")
         self.saveVideosToPhotosLibrary = UserDefaults.standard.bool(forKey: "saveVideosToPhotosLibrary")

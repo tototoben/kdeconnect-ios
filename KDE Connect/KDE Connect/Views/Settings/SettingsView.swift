@@ -96,6 +96,19 @@ struct SettingsView: View {
                         .labelStyle(.accessibilityTitleOnly)
                         .accentColor(.primary)
                 }
+
+                AccessibleHStack {
+                    Label("Upload URL", systemImage: "arrow.up.circle")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                    Spacer()
+                    TextField("http://host:8080/upload",
+                              text: $kdeConnectSettingsForSettings.stationUploadUrl)
+                        .multilineTextAlignment(.trailing)
+                        .foregroundColor(.secondary)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
             }
 
             Section(header: Text("Information")) {

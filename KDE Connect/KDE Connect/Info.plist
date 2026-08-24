@@ -34,8 +34,17 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Discover and connect to other devices using KDE Connect.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Capture photos when triggered by the station remote control.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record audio when capturing video triggered by the station remote control.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save received images to your Photo Library instead of the Files app.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
