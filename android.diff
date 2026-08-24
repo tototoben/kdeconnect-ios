@@ -1,0 +1,1026 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index cd0c28c9..a3c7bce2 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -281,10 +281,15 @@ dependencies {
+     implementation(libs.androidx.lifecycle.extensions)
+     implementation(libs.androidx.lifecycle.common.java8)
+     implementation(libs.androidx.gridlayout)
++    implementation(libs.androidx.camera.core)
++    implementation(libs.androidx.camera.camera2)
++    implementation(libs.androidx.camera.lifecycle)
+     implementation(libs.google.android.material)
+     implementation(libs.disklrucache) //For caching album art bitmaps. FIXME: Not updated in 10+ years. Replace with Kache.
+     implementation(libs.slf4j.api)
+     implementation(libs.slf4j.handroid)
++    implementation(libs.paho.mqtt)
++    implementation(libs.mlkit.face.detection)
+ 
+     implementation(libs.apache.sshd.core)
+     implementation(libs.apache.sshd.sftp)
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index a87c6647..140fe646 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -1,5 +1,6 @@
+ [versions]
+ activityCompose = "1.13.0"
++cameraX = "1.4.2"
+ androidDesugarJdkLibs = "2.1.5"
+ androidGradlePlugin = "9.3.1"
+ androidSmsmms = "kdeconnect-1-21-0"
+@@ -25,11 +26,13 @@ lifecycleExtensions = "2.2.0"
+ lifecycleRuntimeKtx = "2.11.0"
+ logger = "1.0.3"
+ androidMaterial = "1.14.0"
++mlkitFaceDetection = "16.1.7"
+ composeMaterialIcons = "1.7.8"
+ composeMaterial3 = "1.4.0"
+ media = "1.8.0"
+ minaCore = "2.2.9"
+ mockk = "1.14.11"
++pahoMqtt = "1.2.5"
+ preferenceKtx = "1.2.1"
+ reactiveStreams = "1.0.4"
+ recyclerview = "1.4.0"
+@@ -46,6 +49,9 @@ univocityParsers = "2.9.1"
+ android-desugarJdkLibsNio = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "androidDesugarJdkLibs" }
+ android-smsmms = { module = "org.kde.invent.sredman:android-smsmms", version.ref = "androidSmsmms" }
+ androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
++androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "cameraX" }
++androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraX" }
++androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "cameraX" }
+ androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+ androidx-compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "composeMaterial3" }
+ androidx-compose-material-icons = { module = "androidx.compose.material:material-icons-core", version.ref = "composeMaterialIcons" }
+@@ -85,6 +91,8 @@ apache-sshd-sftp = { module = "org.apache.sshd:sshd-sftp", version.ref = "sshdCo
+ apache-sshd-scp = { module = "org.apache.sshd:sshd-scp", version.ref = "sshdCore" }
+ apache-sshd-mina = { module = "org.apache.sshd:sshd-mina", version.ref = "sshdCore" }
+ mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
++mlkit-face-detection = { module = "com.google.mlkit:face-detection", version.ref = "mlkitFaceDetection" }
++paho-mqtt = { module = "org.eclipse.paho:org.eclipse.paho.client.mqttv3", version.ref = "pahoMqtt" }
+ reactive-streams = { module = "org.reactivestreams:reactive-streams", version.ref = "reactiveStreams" }
+ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+ rxjava = { module = "io.reactivex.rxjava2:rxjava", version.ref = "rxjava" }
+diff --git a/src/main/java/org/kde/kdeconnect/plugins/mousepad/MousePadActivity.java b/src/main/java/org/kde/kdeconnect/plugins/mousepad/MousePadActivity.java
+index 65be26ef..c837335d 100644
+--- a/src/main/java/org/kde/kdeconnect/plugins/mousepad/MousePadActivity.java
++++ b/src/main/java/org/kde/kdeconnect/plugins/mousepad/MousePadActivity.java
+@@ -6,13 +6,21 @@
+ 
+ package org.kde.kdeconnect.plugins.mousepad;
+ 
++import android.Manifest;
++import android.content.pm.PackageManager;
+ import android.content.Intent;
+ import android.content.SharedPreferences;
+ import android.hardware.Sensor;
+ import android.hardware.SensorEvent;
+ import android.hardware.SensorEventListener;
+ import android.hardware.SensorManager;
++import android.media.AudioManager;
++import android.media.ToneGenerator;
+ import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
++import android.os.VibrationEffect;
++import android.os.Vibrator;
+ import android.view.GestureDetector;
+ import android.view.HapticFeedbackConstants;
+ import android.view.Menu;
+@@ -24,11 +32,14 @@ import android.view.inputmethod.InputMethodManager;
+ import android.widget.Toast;
+ 
+ import androidx.annotation.NonNull;
++import androidx.core.app.ActivityCompat;
+ import androidx.core.content.ContextCompat;
+ import androidx.core.graphics.Insets;
+ import androidx.core.view.OnApplyWindowInsetsListener;
+ import androidx.core.view.ViewCompat;
++import androidx.core.view.WindowCompat;
+ import androidx.core.view.WindowInsetsCompat;
++import androidx.core.view.WindowInsetsControllerCompat;
+ import androidx.preference.PreferenceManager;
+ 
+ import org.kde.kdeconnect.KdeConnect;
+@@ -40,6 +51,8 @@ import org.kde.kdeconnect_tp.databinding.ActivityMousepadBinding;
+ 
+ import java.util.Objects;
+ 
++import org.json.JSONObject;
++
+ import kotlin.Lazy;
+ import kotlin.LazyKt;
+ 
+@@ -85,6 +98,9 @@ public class MousePadActivity
+     private PointerAccelerationProfile.MouseDelta mouseDelta = new PointerAccelerationProfile.MouseDelta(); // to be reused on every touch move event
+ 
+     private KeyListenerView keyListenerView;
++    private StationMqttClient stationMqttClient;
++    private VisitorTracker visitorTracker;
++    private boolean visitorActivityResumed;
+ 
+     private SharedPreferences prefs = null;
+ 
+@@ -158,9 +174,13 @@ public class MousePadActivity
+         setSupportActionBar(getBinding().toolbarLayout.toolbar);
+         Objects.requireNonNull(getSupportActionBar()).setDisplayHomeAsUpEnabled(true);
+         getSupportActionBar().setDisplayShowHomeEnabled(true);
+-        getBinding().mouseClickLeft.setOnClickListener(v -> sendLeftClick());
+-        getBinding().mouseClickMiddle.setOnClickListener(v -> sendMiddleClick());
+-        getBinding().mouseClickRight.setOnClickListener(v -> sendRightClick());
++        getSupportActionBar().hide();
++        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
++        WindowInsetsControllerCompat windowInsetsController = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
++        windowInsetsController.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
++        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars());
++        getBinding().mouseClickLeft.setOnClickListener(v -> sendYesKeySequence());
++        getBinding().mouseClickRight.setOnClickListener(v -> sendNoKeySequence());
+ 
+         deviceId = getIntent().getStringExtra("deviceId");
+ 
+@@ -177,6 +197,35 @@ public class MousePadActivity
+ 
+         prefs = PreferenceManager.getDefaultSharedPreferences(this);
+         prefs.registerOnSharedPreferenceChangeListener(this);
++        stationMqttClient = createStationMqttClient();
++        visitorTracker = new VisitorTracker(this, this, new VisitorTracker.Listener() {
++            @Override
++            public void onEntered(boolean fromLeft, VisitorTracker.Distance distance) {
++                publishVisitorEvent("visitor_entered", fromLeft ? "left" : "right", distance);
++            }
++
++            @Override
++            public void onDistanceChanged(VisitorTracker.Distance distance) {
++                publishVisitorEvent("visitor_distance_changed", null, distance);
++            }
++
++            @Override
++            public void onApproached() {
++                publishVisitorEvent("visitor_approached", null, null);
++                runOnUiThread(MousePadActivity.this::applyVisitorApproachFeedback);
++            }
++
++            @Override
++            public void onLeft() {
++                stationMqttClient.publishEvent("visitor_left");
++                runOnUiThread(() -> getBinding().visitorDot.hideDot());
++            }
++
++            @Override
++            public void onPosition(float x, float y, VisitorTracker.Distance distance) {
++                runOnUiThread(() -> getBinding().visitorDot.showPosition(x, y, distance));
++            }
++        });
+ 
+         applyPrefs();
+ 
+@@ -202,6 +251,12 @@ public class MousePadActivity
+     @Override
+     protected void onResume() {
+         applyPrefs();
++        stationMqttClient.connect();
++        visitorActivityResumed = true;
++        // Let the black touchpad and controls render before camera binding/model warm-up.
++        getWindow().getDecorView().postDelayed(() -> {
++            if (visitorActivityResumed && !isFinishing()) startVisitorTrackingIfPermitted();
++        }, 400);
+ 
+         if (allowGyro && !gyroEnabled) {
+             mSensorManager.registerListener(this, mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE), SensorManager.SENSOR_DELAY_GAME);
+@@ -224,6 +279,9 @@ public class MousePadActivity
+ 
+     @Override
+     protected void onPause() {
++        visitorActivityResumed = false;
++        visitorTracker.stop();
++        stationMqttClient.disconnect();
+         if (gyroEnabled) {
+             mSensorManager.unregisterListener(this);
+             gyroEnabled = false;
+@@ -243,9 +301,19 @@ public class MousePadActivity
+     @Override
+     protected void onDestroy() {
+         prefs.unregisterOnSharedPreferenceChangeListener(this);
++        visitorTracker.close();
+         super.onDestroy();
+     }
+ 
++    @Override
++    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
++        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
++        if (requestCode == REQUEST_CAMERA && grantResults.length > 0
++                && grantResults[0] == PackageManager.PERMISSION_GRANTED && visitorActivityResumed) {
++            startVisitorTrackingIfPermitted();
++        }
++    }
++
+     @Override
+     public boolean onCreateOptionsMenu(Menu menu) {
+         MenuInflater inflater = getMenuInflater();
+@@ -522,9 +590,41 @@ public class MousePadActivity
+ 
+     @Override
+     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
++        if (key.equals(getString(R.string.station_mqtt_station_id))) {
++            stationMqttClient.disconnect();
++            stationMqttClient = createStationMqttClient();
++            if (hasWindowFocus()) {
++                stationMqttClient.connect();
++            }
++        }
+         if (prefsApplied) prefsApplied = false;
+     }
+ 
++    private StationMqttClient createStationMqttClient() {
++        String stationId = prefs.getString(getString(R.string.station_mqtt_station_id), "1");
++        return new StationMqttClient(stationId, this::applyStationControl);
++    }
++
++    private void startVisitorTrackingIfPermitted() {
++        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
++            visitorTracker.start();
++        } else {
++            ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.CAMERA }, REQUEST_CAMERA);
++        }
++    }
++
++    private void publishVisitorEvent(String event, String side, VisitorTracker.Distance distance) {
++        JSONObject metadata = new JSONObject();
++        try {
++            if (side != null) metadata.put("side", side);
++            if (distance != null) metadata.put("distance", distance.name().toLowerCase(java.util.Locale.ROOT));
++            stationMqttClient.publishEvent(event, metadata);
++        } catch (org.json.JSONException exception) {
++            // JSONObject only receives fixed primitive values above; retain safe event publishing if that changes.
++            stationMqttClient.publishEvent(event);
++        }
++    }
++
+     @NonNull
+     @Override
+     public WindowInsetsCompat onApplyWindowInsets(@NonNull View v, @NonNull WindowInsetsCompat insets) {
+@@ -548,6 +648,117 @@ public class MousePadActivity
+         }
+     }
+ 
++    private void sendYesKeySequence() {
++        MousePadPlugin plugin = KdeConnect.getInstance().getDevicePlugin(deviceId, MousePadPlugin.class);
++        if (plugin == null) {
++            finish();
++            return;
++        }
++
++        stationMqttClient.publishEvent("yes");
++        plugin.sendText("Y");
++        plugin.sendText("E");
++        plugin.sendText("S");
++        plugin.sendSelect();
++    }
++
++    private void sendNoKeySequence() {
++        MousePadPlugin plugin = KdeConnect.getInstance().getDevicePlugin(deviceId, MousePadPlugin.class);
++        if (plugin == null) {
++            finish();
++            return;
++        }
++
++        stationMqttClient.publishEvent("no");
++        plugin.sendText("N");
++        plugin.sendText("O");
++        plugin.sendSelect();
++    }
++
++    private void applyStationControl(JSONObject control) {
++        runOnUiThread(() -> {
++            String action = control.optString("action");
++            if ("reset".equals(action)) {
++                getBinding().mouseClickLeft.setText("YES");
++                getBinding().mouseClickRight.setText("NO");
++                getBinding().mouseClickLeft.setEnabled(true);
++                getBinding().mouseClickRight.setEnabled(true);
++            } else if ("set_ui".equals(action)) {
++                setButtonText(control, "yes", getBinding().mouseClickLeft);
++                setButtonText(control, "no", getBinding().mouseClickRight);
++                if (control.has("yesEnabled")) {
++                    getBinding().mouseClickLeft.setEnabled(control.optBoolean("yesEnabled"));
++                }
++                if (control.has("noEnabled")) {
++                    getBinding().mouseClickRight.setEnabled(control.optBoolean("noEnabled"));
++                }
++            }
++
++            JSONObject feedback = control.optJSONObject("feedback");
++            if (feedback != null) {
++                applyFeedback(feedback);
++            }
++        });
++    }
++
++    private void setButtonText(JSONObject control, String key, View button) {
++        String label = control.optString(key, null);
++        if (label != null && label.length() <= 32) {
++            ((com.google.android.material.button.MaterialButton) button).setText(label);
++        }
++    }
++
++    private void applyFeedback(JSONObject feedback) {
++        int vibrationDuration = Math.max(0, Math.min(feedback.optInt("vibrateMs", 0), 1000));
++        if (vibrationDuration > 0) {
++            Vibrator vibrator = getSystemService(Vibrator.class);
++            if (vibrator != null && vibrator.hasVibrator()) {
++                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
++                    vibrator.vibrate(VibrationEffect.createOneShot(vibrationDuration, VibrationEffect.DEFAULT_AMPLITUDE));
++                } else {
++                    vibrator.vibrate(vibrationDuration);
++                }
++            }
++        }
++
++        if ("beep".equals(feedback.optString("sound"))) {
++            ToneGenerator toneGenerator = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80);
++            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 120);
++            new Handler(Looper.getMainLooper()).postDelayed(toneGenerator::release, 150);
++        }
++
++        if ("pulse".equals(feedback.optString("animation"))) {
++            pulse(getBinding().mouseClickLeft);
++            pulse(getBinding().mouseClickRight);
++        }
++    }
++
++    private void applyVisitorApproachFeedback() {
++        pulse(getBinding().mouseClickLeft);
++        pulse(getBinding().mouseClickRight);
++
++        Vibrator vibrator = getSystemService(Vibrator.class);
++        if (vibrator != null && vibrator.hasVibrator()) {
++            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
++                vibrator.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE));
++            } else {
++                vibrator.vibrate(120);
++            }
++        }
++        ToneGenerator toneGenerator = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80);
++        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 120);
++        new Handler(Looper.getMainLooper()).postDelayed(toneGenerator::release, 150);
++    }
++
++    private void pulse(View view) {
++        view.animate()
++                .scaleX(1.06f)
++                .scaleY(1.06f)
++                .setDuration(100)
++                .withEndAction(() -> view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start())
++                .start();
++    }
++
+     private void sendMiddleClick() {
+         MousePadPlugin plugin = KdeConnect.getInstance().getDevicePlugin(deviceId, MousePadPlugin.class);
+         if (plugin == null) {
+@@ -655,23 +866,8 @@ public class MousePadActivity
+                 mCurrentSensitivity = 1.0f;
+                 return;
+         }
+-        if (prefs.getBoolean("pref_mousepad_show_keyboard", true)) {
+-            if (hasWindowFocus()) {
+-                showKeyboard();
+-            } else {
+-                // Defer until the window gains focus, see pendingShowKeyboard.
+-                pendingShowKeyboard = true;
+-            }
+-        } else {
+-            hideKeyboard();
+-        }
+-
+-
+-        if (prefs.getBoolean(getString(R.string.mousepad_mouse_buttons_enabled_pref), true)) {
+-            getBinding().mouseButtons.setVisibility(View.VISIBLE);
+-        } else {
+-            getBinding().mouseButtons.setVisibility(View.GONE);
+-        }
++        hideKeyboard();
++        getBinding().mouseButtons.setVisibility(View.VISIBLE);
+ 
+         doubleTapDragEnabled = prefs.getBoolean(getString(R.string.mousepad_doubletap_drag_enabled_pref), true);
+ 
+@@ -688,5 +884,6 @@ public class MousePadActivity
+         super.onBackPressed();
+         return true;
+     }
+-}
+ 
++    private static final int REQUEST_CAMERA = 101;
++}
+diff --git a/src/main/java/org/kde/kdeconnect/plugins/mousepad/StationMqttClient.java b/src/main/java/org/kde/kdeconnect/plugins/mousepad/StationMqttClient.java
+new file mode 100644
+index 00000000..c405ca3a
+--- /dev/null
++++ b/src/main/java/org/kde/kdeconnect/plugins/mousepad/StationMqttClient.java
+@@ -0,0 +1,170 @@
++/*
++ * SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++
++package org.kde.kdeconnect.plugins.mousepad;
++
++import android.util.Log;
++
++import org.eclipse.paho.client.mqttv3.IMqttActionListener;
++import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
++import org.eclipse.paho.client.mqttv3.IMqttToken;
++import org.eclipse.paho.client.mqttv3.MqttAsyncClient;
++import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
++import org.eclipse.paho.client.mqttv3.MqttClientPersistence;
++import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
++import org.eclipse.paho.client.mqttv3.MqttException;
++import org.eclipse.paho.client.mqttv3.MqttMessage;
++import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
++import org.json.JSONException;
++import org.json.JSONObject;
++
++import java.nio.charset.StandardCharsets;
++import java.util.UUID;
++
++/**
++ * Activity-scoped client for the station handheld remote contract.
++ *
++ * Receives {@code station/<id>/ui/control} messages containing {@code ts}, {@code src}, and
++ * {@code action}. Supported actions are {@code set_ui}, {@code reset}, and {@code feedback}.
++ * A {@code set_ui} message may include {@code yes}, {@code no}, {@code yesEnabled}, and
++ * {@code noEnabled}; any action may include a {@code feedback} object with {@code vibrateMs},
++ * {@code sound: "beep"}, and {@code animation: "pulse"}. Button presses publish an event named
++ * {@code yes} or {@code no} on {@code station/<id>/ui/event}, always with {@code ts} and {@code src}.
++ */
++final class StationMqttClient implements MqttCallbackExtended {
++    interface Listener {
++        void onControlMessage(JSONObject message);
++    }
++
++    private static final String LOG_TAG = "StationMqttClient";
++    private static final String BROKER_URI = "tcp://192.168.88.198:1883";
++    private static final String SOURCE = "android-remote";
++
++    private final Listener listener;
++    private final String controlTopic;
++    private final String eventTopic;
++    private MqttAsyncClient client;
++
++    StationMqttClient(String stationId, Listener listener) {
++        this.listener = listener;
++        controlTopic = "station/" + stationId + "/ui/control";
++        eventTopic = "station/" + stationId + "/ui/event";
++    }
++
++    synchronized void connect() {
++        if (client != null) {
++            return;
++        }
++
++        try {
++            MqttClientPersistence persistence = new MemoryPersistence();
++            client = new MqttAsyncClient(BROKER_URI, SOURCE + "-" + UUID.randomUUID(), persistence);
++            client.setCallback(this);
++
++            MqttConnectOptions options = new MqttConnectOptions();
++            options.setAutomaticReconnect(true);
++            options.setCleanSession(true);
++            client.connect(options, null, new IMqttActionListener() {
++                @Override
++                public void onSuccess(IMqttToken asyncActionToken) {
++                    // connectComplete subscribes, including after automatic reconnects.
++                }
++
++                @Override
++                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
++                    Log.w(LOG_TAG, "Unable to connect to station MQTT broker", exception);
++                }
++            });
++        } catch (MqttException exception) {
++            Log.w(LOG_TAG, "Unable to create station MQTT client", exception);
++            client = null;
++        }
++    }
++
++    synchronized void disconnect() {
++        if (client == null) {
++            return;
++        }
++
++        try {
++            client.disconnectForcibly();
++            client.close();
++        } catch (MqttException exception) {
++            Log.w(LOG_TAG, "Unable to disconnect station MQTT client", exception);
++        } finally {
++            client = null;
++        }
++    }
++
++    synchronized void publishEvent(String event) {
++        publishEvent(event, null);
++    }
++
++    /** Publishes a state transition with optional, non-image metadata. */
++    synchronized void publishEvent(String event, JSONObject metadata) {
++        if (client == null || !client.isConnected()) {
++            return;
++        }
++
++        JSONObject payload = new JSONObject();
++        try {
++            payload.put("ts", System.currentTimeMillis());
++            payload.put("src", SOURCE);
++            payload.put("event", event);
++            if (metadata != null) {
++                java.util.Iterator<String> keys = metadata.keys();
++                while (keys.hasNext()) {
++                    String key = keys.next();
++                    payload.put(key, metadata.get(key));
++                }
++            }
++            MqttMessage message = new MqttMessage(payload.toString().getBytes(StandardCharsets.UTF_8));
++            message.setQos(1);
++            client.publish(eventTopic, message);
++        } catch (JSONException | MqttException exception) {
++            Log.w(LOG_TAG, "Unable to publish station event", exception);
++        }
++    }
++
++    @Override
++    public void connectComplete(boolean reconnect, String serverURI) {
++        subscribeToControlTopic();
++    }
++
++    @Override
++    public void connectionLost(Throwable cause) {
++        Log.w(LOG_TAG, "Station MQTT connection lost", cause);
++    }
++
++    @Override
++    public void messageArrived(String topic, MqttMessage message) {
++        try {
++            JSONObject payload = new JSONObject(new String(message.getPayload(), StandardCharsets.UTF_8));
++            if (!payload.has("ts") || !payload.has("src") || !payload.has("action")) {
++                Log.w(LOG_TAG, "Ignoring station control message missing ts, src, or action");
++                return;
++            }
++            listener.onControlMessage(payload);
++        } catch (JSONException exception) {
++            Log.w(LOG_TAG, "Ignoring malformed station control message", exception);
++        }
++    }
++
++    @Override
++    public void deliveryComplete(IMqttDeliveryToken token) {
++        // No action required for QoS 1 station events.
++    }
++
++    private synchronized void subscribeToControlTopic() {
++        if (client == null || !client.isConnected()) {
++            return;
++        }
++
++        try {
++            client.subscribe(controlTopic, 1);
++        } catch (MqttException exception) {
++            Log.w(LOG_TAG, "Unable to subscribe to station controls", exception);
++        }
++    }
++}
+diff --git a/src/main/java/org/kde/kdeconnect/plugins/mousepad/VisitorDotView.java b/src/main/java/org/kde/kdeconnect/plugins/mousepad/VisitorDotView.java
+new file mode 100644
+index 00000000..0e1bb1f7
+--- /dev/null
++++ b/src/main/java/org/kde/kdeconnect/plugins/mousepad/VisitorDotView.java
+@@ -0,0 +1,66 @@
++/*
++ * SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++package org.kde.kdeconnect.plugins.mousepad;
++
++import android.content.Context;
++import android.graphics.Canvas;
++import android.graphics.Paint;
++import android.util.AttributeSet;
++import android.view.MotionEvent;
++import android.view.View;
++
++/** A transparent, non-interactive overlay for the derived visitor position. */
++public final class VisitorDotView extends View {
++    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
++    private float x;
++    private float y;
++    private float radius;
++
++    public VisitorDotView(Context context, AttributeSet attrs) {
++        super(context, attrs);
++        paint.setColor(0xff66d9ff);
++        setAlpha(0f);
++    }
++
++    public void showPosition(float normalizedX, float normalizedY, VisitorTracker.Distance distance) {
++        animate().cancel();
++        x = Math.max(0f, Math.min(1f, normalizedX)) * getWidth();
++        y = Math.max(0f, Math.min(1f, normalizedY)) * getHeight();
++        switch (distance) {
++            case NEAR:
++                radius = dp(18);
++                paint.setAlpha(235);
++                break;
++            case MID:
++                radius = dp(13);
++                paint.setAlpha(185);
++                break;
++            default:
++                radius = dp(9);
++                paint.setAlpha(135);
++                break;
++        }
++        if (getAlpha() == 0f) animate().alpha(1f).setDuration(180).start();
++        invalidate();
++    }
++
++    public void hideDot() {
++        animate().alpha(0f).setDuration(260).start();
++    }
++
++    @Override
++    protected void onDraw(Canvas canvas) {
++        super.onDraw(canvas);
++        if (radius > 0f) canvas.drawCircle(x, y, radius, paint);
++    }
++
++    @Override
++    public boolean onTouchEvent(MotionEvent event) {
++        return false;
++    }
++
++    private float dp(float value) {
++        return value * getResources().getDisplayMetrics().density;
++    }
++}
+diff --git a/src/main/java/org/kde/kdeconnect/plugins/mousepad/VisitorTracker.java b/src/main/java/org/kde/kdeconnect/plugins/mousepad/VisitorTracker.java
+new file mode 100644
+index 00000000..71c3ffc0
+--- /dev/null
++++ b/src/main/java/org/kde/kdeconnect/plugins/mousepad/VisitorTracker.java
+@@ -0,0 +1,225 @@
++/*
++ * SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
++ */
++package org.kde.kdeconnect.plugins.mousepad;
++
++import android.content.Context;
++import android.os.SystemClock;
++import android.util.Log;
++
++import androidx.annotation.MainThread;
++import androidx.camera.core.CameraSelector;
++import androidx.camera.core.ImageAnalysis;
++import androidx.camera.core.ImageProxy;
++import androidx.camera.lifecycle.ProcessCameraProvider;
++import androidx.core.content.ContextCompat;
++
++import com.google.common.util.concurrent.ListenableFuture;
++import com.google.mlkit.vision.common.InputImage;
++import com.google.mlkit.vision.face.Face;
++import com.google.mlkit.vision.face.FaceDetection;
++import com.google.mlkit.vision.face.FaceDetector;
++import com.google.mlkit.vision.face.FaceDetectorOptions;
++
++import java.util.List;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++import java.util.concurrent.atomic.AtomicBoolean;
++
++/**
++ * Foreground-only camera analysis. It exposes face-derived state only: no preview or image data
++ * is retained, persisted, or sent outside the process.
++ */
++final class VisitorTracker {
++    enum Distance { NEAR, MID, FAR }
++
++    interface Listener {
++        void onEntered(boolean fromLeft, Distance distance);
++        void onDistanceChanged(Distance distance);
++        void onApproached();
++        void onLeft();
++        void onPosition(float x, float y, Distance distance);
++    }
++
++    private static final String TAG = "VisitorTracker";
++    private static final long ENTER_STABLE_MS = 500;
++    private static final long LEAVE_STABLE_MS = 1000;
++    private static final long DISTANCE_STABLE_MS = 300;
++    private static final float EMA_ALPHA = .32f;
++    private static final long MIN_FRAME_INTERVAL_MS = 100; // at most 10 ML inferences/sec
++
++    private final Context context;
++    private final androidx.lifecycle.LifecycleOwner lifecycleOwner;
++    private final Listener listener;
++    private final ExecutorService analysisExecutor = Executors.newSingleThreadExecutor();
++    private final FaceDetector detector;
++    private final AtomicBoolean frameInFlight = new AtomicBoolean(false);
++    private ProcessCameraProvider cameraProvider;
++    private boolean started;
++    private boolean present;
++    private boolean approached;
++    private long firstSeenAt;
++    private long lastSeenAt;
++    private long distanceCandidateAt;
++    private Distance distance;
++    private Distance candidateDistance;
++    private float smoothedX;
++    private float smoothedY;
++    private boolean hasSmoothedPosition;
++    private volatile long lastSubmittedAt;
++
++    VisitorTracker(Context context, androidx.lifecycle.LifecycleOwner lifecycleOwner, Listener listener) {
++        this.context = context.getApplicationContext();
++        this.lifecycleOwner = lifecycleOwner;
++        this.listener = listener;
++        FaceDetectorOptions options = new FaceDetectorOptions.Builder()
++                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
++                .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
++                .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
++                .setMinFaceSize(0.15f)
++                .build();
++        detector = FaceDetection.getClient(options);
++    }
++
++    @MainThread
++    void start() {
++        if (started) return;
++        started = true;
++        ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(context);
++        future.addListener(() -> {
++            if (!started) return;
++            try {
++                cameraProvider = future.get();
++                ImageAnalysis analysis = new ImageAnalysis.Builder()
++                        .setTargetResolution(new android.util.Size(320, 240))
++                        .setImageQueueDepth(1)
++                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
++                        .build();
++                analysis.setAnalyzer(analysisExecutor, this::analyze);
++                cameraProvider.unbindAll();
++                cameraProvider.bindToLifecycle(lifecycleOwner,
++                        new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_FRONT).build(),
++                        analysis);
++            } catch (Exception exception) {
++                Log.w(TAG, "Unable to start front camera visitor tracking", exception);
++            }
++        }, ContextCompat.getMainExecutor(context));
++    }
++
++    @MainThread
++    void stop() {
++        started = false;
++        if (cameraProvider != null) {
++            cameraProvider.unbindAll();
++            cameraProvider = null;
++        }
++    }
++
++    void close() {
++        stop();
++        detector.close();
++        analysisExecutor.shutdown();
++    }
++
++    private void analyze(ImageProxy imageProxy) {
++        long now = SystemClock.elapsedRealtime();
++        if (!started || imageProxy.getImage() == null
++                || now - lastSubmittedAt < MIN_FRAME_INTERVAL_MS
++                || !frameInFlight.compareAndSet(false, true)) {
++            imageProxy.close();
++            return;
++        }
++        lastSubmittedAt = now;
++        InputImage image = InputImage.fromMediaImage(imageProxy.getImage(), imageProxy.getImageInfo().getRotationDegrees());
++        detector.process(image)
++                .addOnSuccessListener(faces -> handleFaces(faces, imageProxy.getWidth(), imageProxy.getHeight()))
++                .addOnFailureListener(error -> Log.w(TAG, "Face detection failed", error))
++                .addOnCompleteListener(ignored -> {
++                    frameInFlight.set(false);
++                    imageProxy.close();
++                });
++    }
++
++    private synchronized void handleFaces(List<Face> faces, int imageWidth, int imageHeight) {
++        if (!started) return;
++        long now = SystemClock.elapsedRealtime();
++        Face primary = null;
++        int largestArea = 0;
++        for (Face face : faces) {
++            int area = face.getBoundingBox().width() * face.getBoundingBox().height();
++            if (area > largestArea) {
++                primary = face;
++                largestArea = area;
++            }
++        }
++        if (primary == null) {
++            if (present && now - lastSeenAt >= LEAVE_STABLE_MS) {
++                present = false;
++                approached = false;
++                hasSmoothedPosition = false;
++                listener.onLeft();
++            }
++            if (!present) firstSeenAt = 0;
++            return;
++        }
++
++        // ML Kit returns the face in the InputImage coordinate system. Front-camera coordinates
++        // are mirrored so dot/entry side match what the visitor sees on the remote.
++        float rawX = 1f - (primary.getBoundingBox().centerX() / (float) imageWidth);
++        float rawY = primary.getBoundingBox().centerY() / (float) imageHeight;
++        rawX = clamp(rawX);
++        rawY = clamp(rawY);
++        if (!hasSmoothedPosition) {
++            smoothedX = rawX;
++            smoothedY = rawY;
++            hasSmoothedPosition = true;
++        } else {
++            smoothedX += EMA_ALPHA * (rawX - smoothedX);
++            smoothedY += EMA_ALPHA * (rawY - smoothedY);
++        }
++        Distance observedDistance = distanceFor(primary, imageWidth, imageHeight);
++        lastSeenAt = now;
++        if (!present) {
++            if (firstSeenAt == 0) firstSeenAt = now;
++            if (now - firstSeenAt < ENTER_STABLE_MS) return;
++            present = true;
++            distance = observedDistance;
++            candidateDistance = observedDistance;
++            approached = distance == Distance.NEAR;
++            listener.onEntered(smoothedX < .5f, distance);
++            listener.onPosition(smoothedX, smoothedY, distance);
++            if (approached) listener.onApproached();
++            return;
++        }
++
++        listener.onPosition(smoothedX, smoothedY, distance);
++        if (observedDistance == distance) {
++            candidateDistance = distance;
++            return;
++        }
++        if (observedDistance != candidateDistance) {
++            candidateDistance = observedDistance;
++            distanceCandidateAt = now;
++        } else if (now - distanceCandidateAt >= DISTANCE_STABLE_MS) {
++            distance = observedDistance;
++            listener.onDistanceChanged(distance);
++            if (distance == Distance.NEAR && !approached) {
++                approached = true;
++                listener.onApproached();
++            }
++        }
++    }
++
++    // Bounding-box height is a deliberately coarse proxy: larger faces are nearer, not measured.
++    private Distance distanceFor(Face face, int imageWidth, int imageHeight) {
++        float faceFraction = Math.max(face.getBoundingBox().width() / (float) imageWidth,
++                face.getBoundingBox().height() / (float) imageHeight);
++        if (faceFraction >= .45f) return Distance.NEAR; // approximately <= 0.75 m
++        if (faceFraction >= .22f) return Distance.MID;   // approximately 0.75-1.5 m
++        return Distance.FAR;                             // approximately > 1.5 m
++    }
++
++    private static float clamp(float value) {
++        return Math.max(0f, Math.min(1f, value));
++    }
++}
+diff --git a/src/main/res/layout/activity_mousepad.xml b/src/main/res/layout/activity_mousepad.xml
+index 6eda5673..a7ed817b 100644
+--- a/src/main/res/layout/activity_mousepad.xml
++++ b/src/main/res/layout/activity_mousepad.xml
+@@ -20,19 +20,9 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
+         android:id="@+id/mousepad_view"
+         android:layout_width="match_parent"
+         android:layout_height="match_parent"
++        android:background="@android:color/black"
+         android:keepScreenOn="true"
+-        android:orientation="vertical"
+-        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+-
+-        <TextView
+-            style="@android:style/TextAppearance.Medium"
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_centerInParent="true"
+-            android:gravity="center"
+-            android:padding="12dip"
+-            android:importantForAccessibility="no"
+-            android:text="@string/mousepad_info" />
++        android:orientation="vertical">
+ 
+         <org.kde.kdeconnect.plugins.mousepad.KeyListenerView
+             android:id="@+id/keyListener"
+@@ -43,37 +33,37 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
+             android:contentDescription="@string/mousepad_info_no_gestures"
+             />
+ 
++        <!-- Draws only the derived face position. Camera frames are never previewed or stored. -->
++        <org.kde.kdeconnect.plugins.mousepad.VisitorDotView
++            android:id="@+id/visitor_dot"
++            android:layout_width="match_parent"
++            android:layout_height="match_parent"
++            android:layout_above="@id/mouse_buttons"
++            android:importantForAccessibility="no" />
++
+         <LinearLayout
+                 android:id="@+id/mouse_buttons"
+                 android:layout_width="match_parent"
+                 android:layout_height="70dp"
+-                android:orientation="horizontal"
+-                android:layout_alignParentBottom="true">
++                android:layout_alignParentBottom="true"
++                android:orientation="horizontal">
+ 
+             <com.google.android.material.button.MaterialButton
+-                    android:id="@+id/mouse_click_left"
+-                    android:layout_width="wrap_content"
+-                    android:layout_height="match_parent"
+-                    android:contentDescription="@string/left_click"
+-                    android:layout_weight="3"
+-                    app:icon="@drawable/left_click_48dp"
+-                    style="@style/KdeConnectButton.IconButton" />
+-
+-            <com.google.android.material.button.MaterialButton
+-                    android:id="@+id/mouse_click_middle"
+-                    android:layout_width="wrap_content"
+-                    android:contentDescription="@string/middle_click"
+-                    android:layout_height="match_parent"
+-                    android:layout_weight="1"
+-                    style="@style/KdeConnectButton.IconButton.Secondary" />
++                android:id="@+id/mouse_click_left"
++                style="@style/KdeConnectButton.IconButton"
++                android:layout_width="wrap_content"
++                android:layout_height="match_parent"
++                android:layout_weight="1"
++                android:contentDescription="@string/left_click"
++                android:text="YES" />
+ 
+             <com.google.android.material.button.MaterialButton
+                     android:id="@+id/mouse_click_right"
+                     android:layout_width="wrap_content"
+                     android:contentDescription="@string/right_click"
+                     android:layout_height="match_parent"
+-                    android:layout_weight="3"
+-                    app:icon="@drawable/right_click_48dp"
++                    android:layout_weight="1"
++                    android:text="NO"
+                     style="@style/KdeConnectButton.IconButton" />
+ 
+         </LinearLayout>
+diff --git a/src/main/res/values/strings.xml b/src/main/res/values/strings.xml
+index 2dd035cb..cb65ac5f 100644
+--- a/src/main/res/values/strings.xml
++++ b/src/main/res/values/strings.xml
+@@ -95,6 +95,8 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
+     <string name="gyro_mouse_enabled" translatable="false">gyro_mouse_enabled</string>
+     <string name="mousepad_mouse_buttons_enabled_pref" translatable="false">mouse_buttons_enabled</string>
+     <string name="mousepad_doubletap_drag_enabled_pref" translatable="false">doubletap_drag_enabled</string>
++    <string name="station_mqtt_station_id" translatable="false">station_mqtt_station_id</string>
++    <string name="station_mqtt_station_id_title">Station</string>
+     <string name="gyro_mouse_enabled_title">Enable gyroscope mouse</string>
+     <string name="gyro_mouse_sensitivity_title">Gyroscope sensitivity</string>
+     <string name="gyro_mouse_sensitivity" translatable="false">gyro_mouse_sensitivity</string>
+@@ -119,6 +121,16 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
+         <item>middle</item>
+         <item>none</item>
+     </string-array>
++    <string-array name="station_mqtt_station_entries">
++        <item>Station 1</item>
++        <item>Station 2</item>
++        <item>Station 3</item>
++    </string-array>
++    <string-array name="station_mqtt_station_values" translatable="false">
++        <item>1</item>
++        <item>2</item>
++        <item>3</item>
++    </string-array>
+     <string-array name="mousepad_sensitivity_entries">
+         <item>Slowest</item>
+         <item>Above Slowest</item>
+diff --git a/src/main/res/xml/mousepadplugin_preferences.xml b/src/main/res/xml/mousepadplugin_preferences.xml
+index 26afe2ec..0adc7b3b 100644
+--- a/src/main/res/xml/mousepadplugin_preferences.xml
++++ b/src/main/res/xml/mousepadplugin_preferences.xml
+@@ -90,6 +90,15 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
+         android:key="@string/mousepad_mouse_buttons_enabled_pref"
+         android:title="@string/mousepad_mouse_buttons_title" />
+ 
++    <ListPreference
++        android:id="@+id/station_mqtt_station_id"
++        android:defaultValue="1"
++        android:entries="@array/station_mqtt_station_entries"
++        android:entryValues="@array/station_mqtt_station_values"
++        android:key="@string/station_mqtt_station_id"
++        android:summary="%s"
++        android:title="@string/station_mqtt_station_id_title" />
++
+     <SwitchPreference
+         android:id="@+id/mousepad_double_tap_drag_enabled_pref"
+         android:defaultValue="true"

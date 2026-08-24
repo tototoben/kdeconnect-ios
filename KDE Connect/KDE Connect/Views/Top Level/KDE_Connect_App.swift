@@ -54,45 +54,63 @@ import SwiftUI
     var body: some Scene {
 #if !os(macOS)
         WindowGroup {
-            MainTabView()
-                .preferredColorScheme(kdeConnectSettingsForTopLevel.chosenTheme)
-                .onAppear {
-#if DEBUG
-                    if ProcessInfo.processInfo.arguments.contains("setupScreenshotDevices") {
-                        UIPreview.setupFakeDevices()
+            if kdeConnectSettingsForTopLevel.launchIntoStationMode {
+                StationRemoteView()
+                    .preferredColorScheme(.dark)
+                    .onAppear {
+                        backgroundService.startDiscovery()
+                        UIApplication.shared.isIdleTimerDisabled = true
                     }
-#endif
-                    backgroundService.startDiscovery()
-                    motionManager.gyroUpdateInterval = 0.025
-                    
-                    UIApplication.shared.isIdleTimerDisabled = true
-                }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                    // In case the app's been chilling suspended for a long time,
-                    // upon returning ask for updates to all devices's battery statuses
-                    // broadcastBatteryStatusAllDevices()
-                    // requestBatteryStatusAllDevices()
+                    .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                        backgroundService.refreshDiscovery()
+                    }
+                    .onReceive(NotificationCenter.default
+                        .publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                        backgroundService.stopDiscovery()
+                    }
+                    .environmentObject(KdeConnectSettings.shared)
+                    .environmentObject(connectedDevicesViewModel)
+            } else {
+                MainTabView()
+                    .preferredColorScheme(kdeConnectSettingsForTopLevel.chosenTheme)
+                    .onAppear {
+    #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("setupScreenshotDevices") {
+                            UIPreview.setupFakeDevices()
+                        }
+    #endif
+                        backgroundService.startDiscovery()
+                        motionManager.gyroUpdateInterval = 0.025
 
-                    // However, non of the links are kept alive in background
-                    backgroundService.refreshDiscovery()
-                }
-                .onReceive(NotificationCenter.default
-                    .publisher(for: UIApplication
-                        .didEnterBackgroundNotification)
-                ) { _ in
-                    // Aggressively terminate the socket is the best way
-                    // to prevent weird broken pipe/invalid socket issue
-                    backgroundService.stopDiscovery()
-                }
-                .environmentObject(KdeConnectSettings.shared)
-                .environmentObject(connectedDevicesViewModel)
-                .environmentObject(alertManager)
-                .alert(
-                    alertManager.currentAlert.title,
-                    isPresented: $alertManager.alertPresent,
-                    actions: alertManager.currentAlert.buttons,
-                    message: alertManager.currentAlert.content
-                )
+                        UIApplication.shared.isIdleTimerDisabled = true
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                        // In case the app's been chilling suspended for a long time,
+                        // upon returning ask for updates to all devices's battery statuses
+                        // broadcastBatteryStatusAllDevices()
+                        // requestBatteryStatusAllDevices()
+
+                        // However, non of the links are kept alive in background
+                        backgroundService.refreshDiscovery()
+                    }
+                    .onReceive(NotificationCenter.default
+                        .publisher(for: UIApplication
+                            .didEnterBackgroundNotification)
+                    ) { _ in
+                        // Aggressively terminate the socket is the best way
+                        // to prevent weird broken pipe/invalid socket issue
+                        backgroundService.stopDiscovery()
+                    }
+                    .environmentObject(KdeConnectSettings.shared)
+                    .environmentObject(connectedDevicesViewModel)
+                    .environmentObject(alertManager)
+                    .alert(
+                        alertManager.currentAlert.title,
+                        isPresented: $alertManager.alertPresent,
+                        actions: alertManager.currentAlert.buttons,
+                        message: alertManager.currentAlert.content
+                    )
+            }
         }
 #else
         WindowGroup("Connect", id: "connect") {

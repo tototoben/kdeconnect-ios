@@ -113,45 +113,37 @@ public class MDNSDiscovery: NSObject, NetServiceDelegate {
         Self.logger.debug("MDNS stopped anouncing")
     }
 
+    private var resolvedConnections: Set<String> = []
+    private var activeResolvers: [String: DnsResolver] = [:]
+
     private func processBrowserResults(_ results: Set<NWBrowser.Result>) {
         let ownDeviceId = KdeConnectSettings.getUUID()
         for result in results {
-            if case let .service(name: name, type: _, domain: _, interface: _) = result.endpoint {
+            if case let .service(name: name, type: _, domain: domain, interface: _) = result.endpoint {
                 if name == ownDeviceId {
                     Self.logger.info("MDNS ignoring myself")
                     continue
                 }
                 Self.logger.info("MDNS found \(name)")
-                let connection = NWConnection(to: result.endpoint, using: .udp)
-                connection.stateUpdateHandler = { state in
-                    switch state {
-                    case .ready:
-                        Self.logger.info("MDNS sending identity packet to \(result.endpoint.debugDescription)")
-                        let np = NetworkPacket.createIdentity()
-                        np.setInteger(Int(self.tcpPort), forKey: "tcpPort")
-                        let data = np.serialize()
-                        connection.send(content: data, completion: .contentProcessed { error in
-                            if (error != nil) {
-                                Self.logger.error("MDNS send UDP failed: \(error.debugDescription)")
-                            }
-                        })
-                    case .failed(let error):
-                        Self.logger.error("MDNS Connection failed: \(error.debugDescription)")
-                    case .cancelled:
-                        Self.logger.info("MDNS Connection cancelled")
-                    case .waiting(let error):
-                        Self.logger.info("MDNS Connection waiting: \(error)")
-                    case .setup:
-                        break
-                    case .preparing:
-                        break
-                    @unknown default:
-                        break
-                    }
-                }
-                connection.start(queue: .global())
+                resolveService(name: name, type: Self.serviceType, domain: domain)
             }
         }
+    }
+
+    private func resolveService(name: String, type: String, domain: String) {
+        if resolvedConnections.contains(name) {
+            Self.logger.debug("MDNS already resolving \(name), skipping")
+            return
+        }
+        resolvedConnections.insert(name)
+
+        let service = NetService(domain: domain, type: type, name: name)
+        let resolver = DnsResolver(service: service, tcpPort: self.tcpPort) { [weak self] in
+            self?.resolvedConnections.remove(name)
+            self?.activeResolvers.removeValue(forKey: name)
+        }
+        activeResolvers[name] = resolver
+        resolver.resolve()
     }
 
     fileprivate static func deviceInfoToMdnsData(ownDeviceInfo: DeviceInfo) -> Data {
@@ -180,5 +172,77 @@ extension NetService {
             .flatMap { NetService.ErrorCode(rawValue: $0.intValue) }
             ?? .unknownError
         return NSError(domain: NetService.errorDomain, code: code.rawValue)
+    }
+}
+
+/// Resolves a Bonjour service to an IP address and sends a KDE Connect identity
+/// packet via a direct NWConnection. This avoids the NECP flow failures that
+/// occur when connecting directly to a bonjour endpoint.
+private class DnsResolver: NSObject, NetServiceDelegate {
+    private static let logger = Logger(category: "DnsResolver")
+
+    private let service: NetService
+    private let tcpPort: UInt16
+    private let onComplete: () -> Void
+
+    init(service: NetService, tcpPort: UInt16, onComplete: @escaping () -> Void) {
+        self.service = service
+        self.tcpPort = tcpPort
+        self.onComplete = onComplete
+        super.init()
+    }
+
+    func resolve() {
+        Self.logger.info("Resolving \(self.service.name)")
+        self.service.delegate = self
+        self.service.resolve(withTimeout: 5.0)
+    }
+
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        Self.logger.info("Resolved \(sender.name) to \(sender.hostName ?? "?") port \(sender.port)")
+        guard let hostName = sender.hostName, sender.port > 0 else {
+            Self.logger.error("Resolved \(sender.name) but no host/port")
+            onComplete()
+            return
+        }
+
+        let np = NetworkPacket.createIdentity()
+        np.setInteger(Int(tcpPort), forKey: "tcpPort")
+        let data = np.serialize()
+
+        let host = NWEndpoint.Host(hostName)
+        let port = NWEndpoint.Port(integerLiteral: UInt16(sender.port))
+        let connection = NWConnection(host: host, port: port, using: .udp)
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                Self.logger.info("Sending identity to \(hostName):\(sender.port)")
+                connection.send(content: data, completion: .contentProcessed { error in
+                    if let error = error {
+                        Self.logger.error("Send failed: \(error)")
+                    } else {
+                        Self.logger.info("Identity sent successfully")
+                    }
+                    connection.cancel()
+                })
+            case .failed(let error):
+                Self.logger.error("Connection failed: \(error)")
+                connection.cancel()
+            case .waiting(let error):
+                Self.logger.info("Connection waiting: \(error)")
+            default:
+                break
+            }
+        }
+        connection.start(queue: .main)
+    }
+
+    func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+        Self.logger.error("Failed to resolve \(sender.name): \(NetService.error(from: errorDict))")
+        onComplete()
+    }
+
+    deinit {
+        service.delegate = nil
     }
 }

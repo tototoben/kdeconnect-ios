@@ -61,6 +61,37 @@ struct SettingsView: View {
                 }
             }
             
+            Section(header: Text("Station")) {
+                AccessibleHStack {
+                    Label("Broker URI", systemImage: "network")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                    Spacer()
+                    TextField("tcp://host:1883",
+                              text: $kdeConnectSettingsForSettings.stationBrokerUri)
+                        .multilineTextAlignment(.trailing)
+                        .foregroundColor(.secondary)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+
+                Picker(selection: $kdeConnectSettingsForSettings.stationId) {
+                    ForEach(KdeConnectSettings.StationIds, id: \.self) { id in
+                        Text("Station \(id)").tag(id)
+                    }
+                } label: {
+                    Label("Station ID", systemImage: "number")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                }
+
+                Toggle(isOn: $kdeConnectSettingsForSettings.launchIntoStationMode) {
+                    Label("Launch into Station Mode", systemImage: "rectangle.dock")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                }
+            }
+
             Section(header: Text("Information")) {
                 NavigationLink {
                     SettingsAboutView()

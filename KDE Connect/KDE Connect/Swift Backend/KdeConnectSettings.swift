@@ -123,6 +123,34 @@ class KdeConnectSettings: NSObject, ObservableObject {
         }
     }
     
+    // MARK: - Station mode
+    
+    static let StationIds = ["1", "2", "3"]
+    
+    @Published var stationBrokerUri: String {
+        didSet {
+            UserDefaults.standard.set(stationBrokerUri, forKey: "stationBrokerUri")
+        }
+    }
+    
+    @Published var stationId: String {
+        didSet {
+            UserDefaults.standard.set(stationId, forKey: "stationId")
+        }
+    }
+    
+    @Published var stationTargetDeviceId: String? {
+        didSet {
+            UserDefaults.standard.set(stationTargetDeviceId, forKey: "stationTargetDeviceId")
+        }
+    }
+    
+    @Published var launchIntoStationMode: Bool {
+        didSet {
+            UserDefaults.standard.set(launchIntoStationMode, forKey: "launchIntoStationMode")
+        }
+    }
+    
     /// Intentionally not persisted
     @Published var isDebugging: Bool
     @objc
@@ -134,6 +162,10 @@ class KdeConnectSettings: NSObject, ObservableObject {
         UserDefaults.standard.register(defaults: [
             "savePhotosToPhotosLibrary": !DeviceType.isMac,
             "saveVideosToPhotosLibrary": !DeviceType.isMac,
+            "stationBrokerUri": "tcp://192.168.88.198:1883",
+            "stationId": "1",
+            "launchIntoStationMode": true,
+            "directIPs": ["192.168.88.193"],
         ])
 #if !os(macOS)
         let fallbackName = UIDevice.current.name
@@ -144,6 +176,10 @@ class KdeConnectSettings: NSObject, ObservableObject {
         self.chosenTheme = UserDefaults.standard.string(forKey: "chosenTheme").flatMap(ColorScheme.init)
         self.directIPs = UserDefaults.standard.stringArray(forKey: "directIPs") ?? []
         self.disableUdpBroadcastDiscovery = UserDefaults.standard.bool(forKey: "disableUdpBroadcastDiscovery")
+        self.stationBrokerUri = UserDefaults.standard.string(forKey: "stationBrokerUri") ?? "tcp://192.168.88.198:1883"
+        self.stationId = UserDefaults.standard.string(forKey: "stationId") ?? "1"
+        self.stationTargetDeviceId = UserDefaults.standard.string(forKey: "stationTargetDeviceId")
+        self.launchIntoStationMode = UserDefaults.standard.object(forKey: "launchIntoStationMode") as? Bool ?? true
         self.appIcon = AppIcon(rawValue: UserDefaults.standard.string(forKey: "appIcon")) ?? .default
         self.savePhotosToPhotosLibrary = UserDefaults.standard.bool(forKey: "savePhotosToPhotosLibrary")
         self.saveVideosToPhotosLibrary = UserDefaults.standard.bool(forKey: "saveVideosToPhotosLibrary")

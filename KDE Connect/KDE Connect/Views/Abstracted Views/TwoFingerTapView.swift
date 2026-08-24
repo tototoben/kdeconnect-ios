@@ -36,23 +36,22 @@ struct TwoFingerTapView: UIViewRepresentable {
         twoFingerTapGestureRecognizer.numberOfTouchesRequired = 2
         
         view.addGestureRecognizer(twoFingerTapGestureRecognizer)
-        
-        let instructionLabel: UILabel = UILabel()
-        instructionLabel.translatesAutoresizingMaskIntoConstraints = false
-        instructionLabel.textAlignment = .right
-        instructionLabel.text = NSLocalizedString("Move a finger on the screen to move the mouse cursor. Tap with one finger for left click. Tap with two fingers for right click. Use a long press to activate drag'n drop. Or use the menu on the top right to directly send clicks.\n\nDrag with one finger from the “Scroll Wheel” above to scroll both vertically and horizontally. Tap on the “Scroll Wheel” for middle click.", comment: "")
-        instructionLabel.numberOfLines = 12
-        instructionLabel.textAlignment = .center
-        view.addSubview(instructionLabel)
-        
+
+        let iconView: UIImageView = UIImageView()
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.image = UIImage(systemName: "hand.tap")
+        iconView.tintColor = .secondarySystemFill
+        iconView.contentMode = .scaleAspectFit
+        iconView.alpha = 0.5
+        view.addSubview(iconView)
+
         NSLayoutConstraint.activate([
-            instructionLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            instructionLabel.widthAnchor.constraint(equalTo: view.widthAnchor,
-                                                    multiplier: 0.8),
-            instructionLabel.topAnchor.constraint(equalTo: view.layoutMarginsGuide.topAnchor,
-                                                  constant: UIScreen.main.bounds.height / 4),
+            iconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            iconView.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.3),
+            iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
         ])
-        
+
         return view
     }
     

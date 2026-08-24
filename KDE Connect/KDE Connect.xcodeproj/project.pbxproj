@@ -102,6 +102,7 @@
 		D2FAF12727D2E78900658753 /* Introspect in Frameworks */ = {isa = PBXBuildFile; productRef = D2FAF12627D2E78900658753 /* Introspect */; };
 		D2FBA1F9277179A300EBA686 /* CocoaAsyncSocket in Frameworks */ = {isa = PBXBuildFile; productRef = D2FBA1F8277179A300EBA686 /* CocoaAsyncSocket */; };
 		DB8E559E2815961200101059 /* iOS14+FocusState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8E559D2815961200101059 /* iOS14+FocusState.swift */; };
+		STA000012680000100CC21DD /* StationRemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000012680000000CC21DD /* StationRemoteView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -233,6 +234,7 @@
 		D2F7776427C9970E008F20A1 /* SnapshotHelper.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = SnapshotHelper.swift; path = fastlane/SnapshotHelper.swift; sourceTree = SOURCE_ROOT; };
 		D2F7776727C99901008F20A1 /* fastlane */ = {isa = PBXFileReference; lastKnownFileType = folder; path = fastlane; sourceTree = "<group>"; };
 		DB8E559D2815961200101059 /* iOS14+FocusState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "iOS14+FocusState.swift"; sourceTree = "<group>"; };
+		STA000012680000000CC21DD /* StationRemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationRemoteView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -394,6 +396,7 @@
 				A0D8CBC626EF06FA00791D07 /* Swift Backend */,
 				A01FDD2526C4F65B0014B165 /* Plugins and Plugin Views */,
 				A0D8CBCA26EF080E00791D07 /* Views */,
+				STA000012680000200CC21DD /* Station */,
 				D28C94C827D1CA87002EBC2D /* Developer */,
 				5EA4114027960BA50044C559 /* Texts */,
 				A0A04438267BF38A00CC21DD /* Info.plist */,
@@ -409,6 +412,14 @@
 				A0A04436267BF38A00CC21DD /* Preview Assets.xcassets */,
 			);
 			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		STA000012680000200CC21DD /* Station */ = {
+			isa = PBXGroup;
+			children = (
+				STA000012680000000CC21DD /* StationRemoteView.swift */,
+			);
+			path = Station;
 			sourceTree = "<group>";
 		};
 		A0A04440267BF38A00CC21DD /* KDE Connect Tests */ = {
@@ -856,6 +867,7 @@
 				D264C2DB27C8667800BD8AFB /* AppIconPicker.swift in Sources */,
 				A0A0445B267BF40400CC21DD /* DevicesView.swift in Sources */,
 				A0D76FCC26E6B034009D9B03 /* RemoteInputView.swift in Sources */,
+				STA000012680000100CC21DD /* StationRemoteView.swift in Sources */,
 				D2A8720E282C95D700DE980E /* DeviceDiscoveryHelp.swift in Sources */,
 				D271710929F07E51000CDB7F /* FilesHelper.swift in Sources */,
 				D2E60C4129FDB06000502F07 /* SetupFileTransfersForUITests.swift in Sources */,
@@ -1073,7 +1085,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"KDE Connect/Preview Content\"";
-				DEVELOPMENT_TEAM = 5433B4KXM8;
+				DEVELOPMENT_TEAM = 2QM43433KT;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = "KDE Connect/Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -1086,6 +1098,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 0.5.6;
 				PRODUCT_BUNDLE_IDENTIFIER = org.kde.kdeconnect;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = org.kde.kdeconnect.hons;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
 				RUN_CLANG_STATIC_ANALYZER = YES;
@@ -1112,7 +1125,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"KDE Connect/Preview Content\"";
-				DEVELOPMENT_TEAM = 5433B4KXM8;
+				DEVELOPMENT_TEAM = 2QM43433KT;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = "KDE Connect/Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -1125,6 +1138,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 0.5.6;
 				PRODUCT_BUNDLE_IDENTIFIER = org.kde.kdeconnect;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = org.kde.kdeconnect.hons;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";

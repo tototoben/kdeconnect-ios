@@ -228,12 +228,15 @@
     [np setInteger:_tcpPort forKey:@"tcpPort"];
     NSData *data = [np serialize];
 
-    if (includeBroadcast) {
-        [_udpSocket sendData:data toHost:@"255.255.255.255" port:PORT withTimeout:-1 tag:UDPBROADCAST_TAG];
-    }
-
+    // Send unicast to direct IPs first, before broadcast. On some networks
+    // (and in the iOS Simulator) the broadcast send can fail and close the
+    // socket, which would prevent the unicast sends from going through.
     for (NSString *address in ipAddresses) {
         [_udpSocket sendData:data toHost:address port:PORT withTimeout:-1 tag:UDPBROADCAST_TAG];
+    }
+
+    if (includeBroadcast) {
+        [_udpSocket sendData:data toHost:@"255.255.255.255" port:PORT withTimeout:-1 tag:UDPBROADCAST_TAG];
     }
 }
 
