@@ -25,6 +25,7 @@ import SwiftUI
     @ObservedObject var kdeConnectSettingsForTopLevel: KdeConnectSettings = .shared
 #if !os(macOS)
     @StateObject var alertManager: AlertManager = AlertManager()
+    @UIApplicationDelegateAdaptor(StationAppDelegate.self) var appDelegate
 #else
     @StateObject var inAppNotificationManager: InAppNotificationManager
     @StateObject var notificationManager: NotificationManager

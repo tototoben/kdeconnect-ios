@@ -143,6 +143,9 @@ struct StationRemoteView: View {
             MainTabView()
         }
         .onAppear {
+            // Force portrait orientation for kiosk mode
+            UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
+            UIViewController.attemptRotationToDeviceOrientation()
             let logCallback: (String) -> Void = { entry in
                 DispatchQueue.main.async {
                     mqttLog.append(entry)
