@@ -101,6 +101,7 @@
 		D2F7776627C99760008F20A1 /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F7776427C9970E008F20A1 /* SnapshotHelper.swift */; };
 		D2FAF12727D2E78900658753 /* Introspect in Frameworks */ = {isa = PBXBuildFile; productRef = D2FAF12627D2E78900658753 /* Introspect */; };
 		D2FBA1F9277179A300EBA686 /* CocoaAsyncSocket in Frameworks */ = {isa = PBXBuildFile; productRef = D2FBA1F8277179A300EBA686 /* CocoaAsyncSocket */; };
+		D43503DA303EE2FF005B5CE3 /* CocoaMQTT in Frameworks */ = {isa = PBXBuildFile; productRef = STA000022680000400CC21DD /* CocoaMQTT */; };
 		DB8E559E2815961200101059 /* iOS14+FocusState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8E559D2815961200101059 /* iOS14+FocusState.swift */; };
 		STA000012680000100CC21DD /* StationRemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000012680000000CC21DD /* StationRemoteView.swift */; };
 		STA000022680000500CC21DD /* StationMqttClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000022680000600CC21DD /* StationMqttClient.swift */; };
@@ -252,6 +253,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D43503DA303EE2FF005B5CE3 /* CocoaMQTT in Frameworks */,
 				D21A100829B878B800CE02F8 /* OrderedCollections in Frameworks */,
 				D2FBA1F9277179A300EBA686 /* CocoaAsyncSocket in Frameworks */,
 				D2FAF12727D2E78900658753 /* Introspect in Frameworks */,
@@ -416,16 +418,6 @@
 				A0A04436267BF38A00CC21DD /* Preview Assets.xcassets */,
 			);
 			path = "Preview Content";
-			sourceTree = "<group>";
-		};
-		STA000012680000200CC21DD /* Station */ = {
-			isa = PBXGroup;
-			children = (
-				STA000012680000000CC21DD /* StationRemoteView.swift */,
-				STA000022680000600CC21DD /* StationMqttClient.swift */,
-				STA000032680000800CC21DD /* StationCameraManager.swift */,
-			);
-			path = Station;
 			sourceTree = "<group>";
 		};
 		A0A04440267BF38A00CC21DD /* KDE Connect Tests */ = {
@@ -678,6 +670,16 @@
 				D2423C3F2914979B00616D70 /* iOS14+TextFormat.swift */,
 			);
 			path = iOS14Compatibility;
+			sourceTree = "<group>";
+		};
+		STA000012680000200CC21DD /* Station */ = {
+			isa = PBXGroup;
+			children = (
+				STA000012680000000CC21DD /* StationRemoteView.swift */,
+				STA000022680000600CC21DD /* StationMqttClient.swift */,
+				STA000032680000800CC21DD /* StationCameraManager.swift */,
+			);
+			path = Station;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

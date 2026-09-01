@@ -130,6 +130,20 @@ struct StationRemoteView: View {
 
             VStack {
                 HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("target: \(targetDeviceId ?? "nil")")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.yellow.opacity(0.7))
+                        Text("connected: \(devicesViewModel.connectedDevices.count)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.yellow.opacity(0.7))
+                        ForEach(devicesViewModel.connectedDevices.sorted(by: { $0.value < $1.value }), id: \.key) { id, name in
+                            let hasPlugin = (backgroundService._devices[id]?._plugins[.mousePadRequest] as? RemoteInput) != nil
+                            Text("  \(name): \(hasPlugin ? "remoteInput" : "no-remoteInput")")
+                                .font(.system(size: 8, design: .monospaced))
+                                .foregroundColor(hasPlugin ? .green.opacity(0.5) : .red.opacity(0.5))
+                        }
+                    }
                     Spacer()
                     Button(action: { showingSettings = true }, label: {
                         Image(systemName: "gearshape")
@@ -139,6 +153,7 @@ struct StationRemoteView: View {
                     })
                 }
                 .padding(.top, 8)
+                .padding(.horizontal, 8)
                 Spacer()
             }
         }

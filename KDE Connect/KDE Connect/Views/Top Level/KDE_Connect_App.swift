@@ -70,6 +70,13 @@ import SwiftUI
                     }
                     .environmentObject(KdeConnectSettings.shared)
                     .environmentObject(connectedDevicesViewModel)
+                    .environmentObject(alertManager)
+                    .alert(
+                        alertManager.currentAlert.title,
+                        isPresented: $alertManager.alertPresent,
+                        actions: alertManager.currentAlert.buttons,
+                        message: alertManager.currentAlert.content
+                    )
             } else {
                 MainTabView()
                     .preferredColorScheme(kdeConnectSettingsForTopLevel.chosenTheme)

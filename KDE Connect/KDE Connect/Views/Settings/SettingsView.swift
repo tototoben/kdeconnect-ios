@@ -11,7 +11,16 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject private var kdeConnectSettingsForSettings: KdeConnectSettings = .shared
-    
+    @ObservedObject private var devicesViewModel: ConnectedDevicesViewModel = connectedDevicesViewModel
+
+    /// Merged [deviceId: deviceName] from connected and remembered devices, for the target picker.
+    private var availableDevices: [String: String] {
+        devicesViewModel.connectedDevices.merging(devicesViewModel.savedDevices) { current, _ in current }
+    }
+
+    /// Sentinel for the "Auto-select" picker option (nil stationTargetDeviceId).
+    private static let autoSelectTag = ""
+
     var body: some View {
         List {
             // These could go in sections to give them each descriptions and space
@@ -81,6 +90,22 @@ struct SettingsView: View {
                     }
                 } label: {
                     Label("Station ID", systemImage: "number")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                }
+
+                Picker(selection: Binding(
+                    get: { kdeConnectSettingsForSettings.stationTargetDeviceId ?? Self.autoSelectTag },
+                    set: { newValue in
+                        kdeConnectSettingsForSettings.stationTargetDeviceId = newValue == Self.autoSelectTag ? nil : newValue
+                    }
+                )) {
+                    Text("Auto-select").tag(Self.autoSelectTag)
+                    ForEach(availableDevices.sorted(by: { $0.value < $1.value }), id: \.key) { deviceId, deviceName in
+                        Text(deviceName).tag(deviceId)
+                    }
+                } label: {
+                    Label("Target Device", systemImage: "display")
                         .labelStyle(.accessibilityTitleOnly)
                         .accentColor(.primary)
                 }
