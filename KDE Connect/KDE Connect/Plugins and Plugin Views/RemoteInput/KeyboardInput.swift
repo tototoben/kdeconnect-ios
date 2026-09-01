@@ -29,40 +29,94 @@ struct StationKeyboardRootView: View {
     let onDelete: () -> Void
     let onReturn: () -> Void
     let onSpace: () -> Void
+    let onTab: () -> Void
+    let onModifierToggle: (RemoteInput.KeyModifier, Bool) -> Void
 
-    private let keyRows: [[String]] = [
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+    private let charRows: [[String]] = [
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
         ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
         ["z", "x", "c", "v", "b", "n", "m"],
     ]
 
+    private let numpadRows: [[String]] = [
+        ["7", "8", "9"],
+        ["4", "5", "6"],
+        ["1", "2", "3"],
+    ]
+
+    @State private var ctrlActive: Bool = false
+    @State private var shiftActive: Bool = false
+    @State private var altActive: Bool = false
+
     var body: some View {
-        VStack(spacing: 8) {
-            ForEach(keyRows.indices, id: \.self) { rowIndex in
-                HStack(spacing: 6) {
-                    ForEach(keyRows[rowIndex], id: \.self) { key in
-                        KeyButton(title: key) {
-                            onKey(key)
+        HStack(spacing: 12) {
+            // Left: modifier numpad
+            VStack(spacing: 6) {
+                ModifierKeyButton(title: "Ctrl", isActive: ctrlActive) {
+                    ctrlActive.toggle()
+                    onModifierToggle(.control, ctrlActive)
+                }
+                ModifierKeyButton(title: "Shift", isActive: shiftActive) {
+                    shiftActive.toggle()
+                    onModifierToggle(.shift, shiftActive)
+                }
+                ModifierKeyButton(title: "Alt", isActive: altActive) {
+                    altActive.toggle()
+                    onModifierToggle(.alt, altActive)
+                }
+                ModifierKeyButton(title: "Tab") {
+                    onTab()
+                }
+            }
+            .frame(width: 70)
+
+            // Center: character keys
+            VStack(spacing: 8) {
+                ForEach(charRows.indices, id: \.self) { rowIndex in
+                    HStack(spacing: 6) {
+                        ForEach(charRows[rowIndex], id: \.self) { key in
+                            KeyButton(title: key) {
+                                onKey(key)
+                            }
+                            .frame(minWidth: 44)
                         }
                     }
                 }
-            }
-            HStack(spacing: 6) {
-                SpecialKeyButton(systemImage: "delete.left") {
-                    onDelete()
-                }
-                .frame(width: 64)
+                HStack(spacing: 6) {
+                    KeyButton(title: "space", isWide: true) {
+                        onSpace()
+                    }
 
-                KeyButton(title: "space", isWide: true) {
-                    onSpace()
+                    SpecialKeyButton(systemImage: "return") {
+                        onReturn()
+                    }
+                    .frame(width: 64)
                 }
-
-                SpecialKeyButton(systemImage: "return") {
-                    onReturn()
-                }
-                .frame(width: 64)
             }
+
+            // Right: number numpad (3x3 grid + 0 + backspace)
+            VStack(spacing: 6) {
+                ForEach(numpadRows.indices, id: \.self) { rowIndex in
+                    HStack(spacing: 6) {
+                        ForEach(numpadRows[rowIndex], id: \.self) { num in
+                            KeyButton(title: num) {
+                                onKey(num)
+                            }
+                        }
+                    }
+                }
+                HStack(spacing: 6) {
+                    KeyButton(title: "0") {
+                        onKey("0")
+                    }
+                    .frame(width: 64)
+
+                    SpecialKeyButton(systemImage: "delete.left") {
+                        onDelete()
+                    }
+                }
+            }
+            .frame(width: 160)
         }
         .frame(maxWidth: 500)
         .frame(maxWidth: .infinity)
@@ -130,6 +184,29 @@ private struct KeyPressStyle: ButtonStyle {
     }
 }
 
+private struct ModifierKeyButton: View {
+    let title: String
+    var isActive: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            action()
+        }) {
+            Text(title)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(isActive ? .white : Color(red: 0.6, green: 0.7, blue: 0.9))
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isActive ? Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 0.8) : Color(white: 0.10))
+                )
+        }
+        .buttonStyle(KeyPressStyle())
+    }
+}
+
 // MARK: - KeyboardListener (hosts custom keyboard via inputView)
 
 public class KeyboardListener: UIView, UIKeyInput {
@@ -186,12 +263,6 @@ fileprivate struct _KeyboardListenerPlaceholderView: UIViewRepresentable {
         private var currentModifiers: [RemoteInput.KeyModifier] = []
         fileprivate var hostingController: UIHostingController<StationKeyboardRootView>?
 
-        static let modifierBarColor = UIColor(white: 0.08, alpha: 1.0)
-        static let modifierSelectedColor = UIColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 0.8)
-        static let modifierTextColor = UIColor(red: 0.6, green: 0.7, blue: 0.9, alpha: 1.0)
-        static let modifierSelectedTextColor = UIColor.white
-        static let panelBgColor = UIColor(white: 0.04, alpha: 1.0)
-
         init(_ parent: _KeyboardListenerPlaceholderView) {
             self.parent = parent
         }
@@ -215,26 +286,14 @@ fileprivate struct _KeyboardListenerPlaceholderView: UIViewRepresentable {
             currentModifiers.removeAll()
         }
 
-        private func modifierPressed(_ button: UIButton, type: RemoteInput.KeyModifier) {
-            button.isSelected.toggle()
-            if button.isSelected {
-                button.backgroundColor = Self.modifierSelectedColor
+        func setModifier(_ type: RemoteInput.KeyModifier, isOn: Bool) {
+            if isOn {
                 currentModifiers.append(type)
             } else {
-                button.backgroundColor = Self.modifierBarColor
                 currentModifiers.removeAll { $0 == type }
             }
         }
 
-        @objc func ctrlPressed(_ button: UIButton) {
-            modifierPressed(button, type: .control)
-        }
-        @objc func shiftPressed(_ button: UIButton) {
-            modifierPressed(button, type: .shift)
-        }
-        @objc func altPressed(_ button: UIButton) {
-            modifierPressed(button, type: .alt)
-        }
         @objc func tabPressed(_ button: UIButton) {
             parent.onTab()
         }
@@ -267,6 +326,12 @@ fileprivate struct _KeyboardListenerPlaceholderView: UIViewRepresentable {
             },
             onSpace: {
                 context.coordinator.onInsertText(" ")
+            },
+            onTab: {
+                context.coordinator.tabPressed(UIButton())
+            },
+            onModifierToggle: { modifier, isOn in
+                context.coordinator.setModifier(modifier, isOn: isOn)
             }
         )
         let hostingController = UIHostingController(rootView: keyboardRootView)
@@ -274,39 +339,6 @@ fileprivate struct _KeyboardListenerPlaceholderView: UIViewRepresentable {
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         context.coordinator.hostingController = hostingController
         view.inputView = hostingController.view
-
-        // Modifier bar as input accessory (sits above the keyboard)
-        let createButton: (String, @escaping (UIButton) -> Void) -> UIButton = { name, actionHandler in
-            let button = UIButton()
-            button.setTitle(name, for: .normal)
-            button.setTitleColor(Coordinator.modifierTextColor, for: .normal)
-            button.setTitleColor(UIColor(white: 0.3, alpha: 1.0), for: .highlighted)
-            button.setTitleColor(Coordinator.modifierSelectedTextColor, for: .selected)
-            button.backgroundColor = Coordinator.modifierBarColor
-            button.layer.cornerRadius = 8
-            button.layer.cornerCurve = .continuous
-            button.layer.borderWidth = 0
-            let action = UIAction { _ in actionHandler(button) }
-            button.addAction(action, for: .touchUpInside)
-            return button
-        }
-
-        let tab = createButton("Tab") { sender in context.coordinator.tabPressed(sender) }
-        let ctrl = createButton("Ctrl") { sender in context.coordinator.ctrlPressed(sender) }
-        let shift = createButton("Shift") { sender in context.coordinator.shiftPressed(sender) }
-        let alt = createButton("Alt") { sender in context.coordinator.altPressed(sender) }
-
-        let panel = UIStackView()
-        panel.backgroundColor = Coordinator.panelBgColor
-        panel.distribution = .fillEqually
-        panel.spacing = 8
-        panel.frame = CGRect(x: 0, y: 0, width: 0, height: 30)
-        panel.addArrangedSubview(tab)
-        panel.addArrangedSubview(ctrl)
-        panel.addArrangedSubview(shift)
-        panel.addArrangedSubview(alt)
-
-        view.inputAccessoryView = panel
 
         // Auto-focus: become first responder on next run loop
         DispatchQueue.main.async {
