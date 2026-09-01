@@ -13,10 +13,6 @@ struct StationRemoteView: View {
     @ObservedObject private var settings = KdeConnectSettings.shared
     @ObservedObject private var devicesViewModel = connectedDevicesViewModel
 
-    @State private var yesLabel: String = "YES"
-    @State private var noLabel: String = "NO"
-    @State private var yesEnabled: Bool = true
-    @State private var noEnabled: Bool = true
     @State private var pulse: Bool = false
     @State private var showingSettings: Bool = false
     @State private var cameraManager: StationCameraManager?
@@ -67,31 +63,15 @@ struct StationRemoteView: View {
                     sendSingleHold()
                 }
 
-                HStack(spacing: 0) {
-                    Button(action: sendYes) {
-                        Text(yesLabel)
-                            .font(.system(size: 48, weight: .bold, design: .default))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(yesEnabled ? Color.green.opacity(0.15) : Color.gray.opacity(0.1))
-                    }
-                    .disabled(!yesEnabled)
-                    .scaleEffect(pulse ? 1.05 : 1.0)
-                    .animation(.easeInOut(duration: 0.3), value: pulse)
-
-                    Button(action: sendNo) {
-                        Text(noLabel)
-                            .font(.system(size: 48, weight: .bold, design: .default))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(noEnabled ? Color.red.opacity(0.15) : Color.gray.opacity(0.1))
-                    }
-                    .disabled(!noEnabled)
-                    .scaleEffect(pulse ? 1.05 : 1.0)
-                    .animation(.easeInOut(duration: 0.3), value: pulse)
+                KeyboardListenerPlaceholderView { key, modifiers in
+                    sendKeyPress(key, modifiers)
+                } onDeleteBackward: {
+                    sendSpecialKeyPress(.backspace)
+                } onReturn: {
+                    sendSpecialKeyPress(.return)
+                } onTab: {
+                    sendSpecialKeyPress(.tab)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 120)
             }
 
             if settings.stationMqttDebug {
@@ -123,7 +103,7 @@ struct StationRemoteView: View {
                     .background(Color.black.opacity(0.7))
                     .cornerRadius(8)
                     .padding(.horizontal, 8)
-                    .padding(.bottom, 130)
+                    .padding(.bottom, 8)
                 }
                 .allowsHitTesting(logPaused)
             }
@@ -206,25 +186,19 @@ struct StationRemoteView: View {
         }
     }
 
-    private func sendYes() {
-        mqttCoordinator?.publishEvent(.yes)
+    private func sendKeyPress(_ keys: String, _ modifiers: [RemoteInput.KeyModifier]) {
         guard let deviceId = targetDeviceId,
               let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
         else { return }
-        remoteInput.sendKeyPress("Y")
-        remoteInput.sendKeyPress("E")
-        remoteInput.sendKeyPress("S")
-        remoteInput.sendSpecialKeyPress(.return)
+        remoteInput.sendKeyPress(keys, modifiers)
+        mqttCoordinator?.publishEvent(.textSent(text: keys))
     }
 
-    private func sendNo() {
-        mqttCoordinator?.publishEvent(.no)
+    private func sendSpecialKeyPress(_ key: RemoteInput.SpecialKey) {
         guard let deviceId = targetDeviceId,
               let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
         else { return }
-        remoteInput.sendKeyPress("N")
-        remoteInput.sendKeyPress("O")
-        remoteInput.sendSpecialKeyPress(.return)
+        remoteInput.sendSpecialKeyPress(key)
     }
 
     private func sendMouseDelta(dx: Float, dy: Float) {
@@ -279,28 +253,7 @@ struct StationRemoteView: View {
     private func handleControlMessage(_ control: [String: Any]) {
         let action = control["action"] as? String ?? ""
 
-        if action == "reset" {
-            DispatchQueue.main.async {
-                yesLabel = "YES"
-                noLabel = "NO"
-                yesEnabled = true
-                noEnabled = true
-            }
-        } else if action == "set_ui" {
-            if let yes = control["yes"] as? String, yes.count <= 32 {
-                DispatchQueue.main.async { yesLabel = yes }
-            }
-            // swiftlint:disable:next identifier_name
-            if let no = control["no"] as? String, no.count <= 32 {
-                DispatchQueue.main.async { noLabel = no }
-            }
-            if let yesEn = control["yesEnabled"] as? Bool {
-                DispatchQueue.main.async { yesEnabled = yesEn }
-            }
-            if let noEn = control["noEnabled"] as? Bool {
-                DispatchQueue.main.async { noEnabled = noEn }
-            }
-        } else if action == "take_photo" {
+        if action == "take_photo" {
             DispatchQueue.main.async {
                 cameraManager?.record(duration: 3.0)
             }

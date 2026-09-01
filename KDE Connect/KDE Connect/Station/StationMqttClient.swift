@@ -16,9 +16,7 @@ enum StationDistance: String {
 }
 
 enum StationEvent {
-    case yes
-    // swiftlint:disable:next identifier_name
-    case no
+    case textSent(text: String)
     case visitorEntered(side: String, distance: StationDistance)
     case visitorDistanceChanged(distance: StationDistance)
     case visitorApproached
@@ -26,8 +24,7 @@ enum StationEvent {
 
     var name: String {
         switch self {
-        case .yes: return "yes"
-        case .no: return "no"
+        case .textSent: return "text_sent"
         case .visitorEntered: return "visitor_entered"
         case .visitorDistanceChanged: return "visitor_distance_changed"
         case .visitorApproached: return "visitor_approached"
@@ -42,6 +39,8 @@ enum StationEvent {
             "event": name,
         ]
         switch self {
+        case .textSent(let text):
+            payload["text"] = text
         case .visitorEntered(let side, let distance):
             payload["side"] = side
             payload["distance"] = distance.rawValue
