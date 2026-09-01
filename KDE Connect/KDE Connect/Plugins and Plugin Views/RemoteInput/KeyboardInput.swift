@@ -64,6 +64,8 @@ struct StationKeyboardRootView: View {
                 .frame(width: 64)
             }
         }
+        .frame(maxWidth: 500)
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 4)
         .padding(.top, 4)
         .padding(.bottom, 8)

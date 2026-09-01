@@ -11,7 +11,7 @@ class StationAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         if KdeConnectSettings.shared.launchIntoStationMode {
-            return .portrait
+            return .landscape
         }
         return .all
     }

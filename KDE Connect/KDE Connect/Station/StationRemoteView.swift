@@ -143,9 +143,8 @@ struct StationRemoteView: View {
             MainTabView()
         }
         .onAppear {
-            // Force portrait orientation for kiosk mode
-            UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
-            UIViewController.attemptRotationToDeviceOrientation()
+            // Force landscape orientation for kiosk mode
+            forceLandscapeOrientation()
             let logCallback: (String) -> Void = { entry in
                 DispatchQueue.main.async {
                     mqttLog.append(entry)
@@ -251,6 +250,26 @@ struct StationRemoteView: View {
             }
         }
         return nil
+    }
+
+    private func forceLandscapeOrientation() {
+        if #available(iOS 16.0, *) {
+            let scenes = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+            guard let scene = scenes.first(where: { $0.activationState == .foregroundActive })
+                    ?? scenes.first(where: { $0.activationState == .foregroundInactive })
+                    ?? scenes.first else {
+                // Scene not ready yet; retry shortly
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    forceLandscapeOrientation()
+                }
+                return
+            }
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+        } else {
+            UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+            UIViewController.attemptRotationToDeviceOrientation()
+        }
     }
 
     private func handleControlMessage(_ control: [String: Any]) {
