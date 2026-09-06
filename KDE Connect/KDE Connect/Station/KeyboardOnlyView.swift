@@ -13,6 +13,10 @@ struct KeyboardOnlyView: View {
 
     @State private var showingSettings: Bool = false
     @State private var modifiers: [RemoteInput.KeyModifier] = []
+    @State private var isGuidedAccessActive: Bool = UIAccessibility.isGuidedAccessEnabled
+
+    /// True when Guided Access is active — all config/debug UI is hidden.
+    private var isKiosk: Bool { isGuidedAccessActive }
 
     var body: some View {
         ZStack {
@@ -46,7 +50,7 @@ struct KeyboardOnlyView: View {
 
             VStack {
                 HStack {
-                    if settings.showConnectionDebug {
+                    if settings.showConnectionDebug && !isKiosk {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("target: \(targetDeviceId ?? "nil")")
                                 .font(.system(size: 9, design: .monospaced))
@@ -57,12 +61,14 @@ struct KeyboardOnlyView: View {
                         }
                     }
                     Spacer()
-                    Button(action: { showingSettings = true }, label: {
-                        Image(systemName: "gearshape")
-                            .font(.title2)
-                            .foregroundColor(.gray)
-                            .padding(8)
-                    })
+                    if !isKiosk {
+                        Button(action: { showingSettings = true }, label: {
+                            Image(systemName: "gearshape")
+                                .font(.title2)
+                                .foregroundColor(.gray)
+                                .padding(8)
+                        })
+                    }
                 }
                 .padding(.top, 8)
                 .padding(.horizontal, 8)
@@ -70,7 +76,7 @@ struct KeyboardOnlyView: View {
             }
 
             // Floating reset button at bottom-left
-            if settings.showKeyboardControls {
+            if settings.showKeyboardControls && !isKiosk {
                 VStack {
                     Spacer()
                     HStack {
@@ -90,14 +96,30 @@ struct KeyboardOnlyView: View {
                     .padding(.leading, 16)
                 }
             }
+
+            // Edge gesture deferring controller (makes system defer edge swipes to app)
+            if isKiosk {
+                EdgeGestureDeferrer()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+            }
         }
         .statusBarHidden()
         .navigationBarHidden(true)
+        .modifier(SystemOverlayHidden())
         .fullScreenCover(isPresented: $showingSettings) {
             MainTabView()
         }
         .onAppear {
             forceLandscapeOrientation()
+            UIApplication.shared.isIdleTimerDisabled = true
+            isGuidedAccessActive = UIAccessibility.isGuidedAccessEnabled
+        }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.guidedAccessStatusDidChangeNotification)) { _ in
+            isGuidedAccessActive = UIAccessibility.isGuidedAccessEnabled
         }
     }
 
@@ -161,5 +183,49 @@ struct KeyboardOnlyView: View {
             UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
             UIViewController.attemptRotationToDeviceOrientation()
         }
+    }
+}
+
+// MARK: - System overlay hidden modifier (iOS 16+ guard)
+
+private struct SystemOverlayHidden: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content.persistentSystemOverlays(.hidden)
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - Edge gesture deferrer
+
+/// Wraps a UIViewController that returns all edges in
+/// `preferredScreenEdgesDeferringSystemGestures`, causing iOS to defer
+/// system edge gestures (home indicator, notification center, control center)
+/// to the app on first swipe.
+struct EdgeGestureDeferrer: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> EdgeGestureViewController {
+        EdgeGestureViewController()
+    }
+
+    func updateUIViewController(_ uiViewController: EdgeGestureViewController, context: Context) {
+    }
+}
+
+final class EdgeGestureViewController: UIViewController {
+    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
+        return [.top, .bottom, .left, .right]
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
     }
 }
