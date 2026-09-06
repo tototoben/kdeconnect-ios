@@ -125,6 +125,7 @@ final class StationMqttClient: CocoaMQTTDelegate {
         if ack == .accept {
             logger.info("Subscribing to \(self.controlTopic)")
             mqtt.subscribe(controlTopic, qos: Self.qos)
+            SoundManager.shared.play(.mqttConnect)
         }
     }
 
@@ -147,6 +148,7 @@ final class StationMqttClient: CocoaMQTTDelegate {
         if payload["ts"] == nil || payload["src"] == nil || payload["action"] == nil {
             return
         }
+        SoundManager.shared.play(.mqttMessage)
         listener?.onControlMessage(payload)
     }
 
@@ -156,6 +158,7 @@ final class StationMqttClient: CocoaMQTTDelegate {
 
     func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError err: Error?) {
         logger.error("Disconnected: \(err?.localizedDescription ?? "no error")")
+        SoundManager.shared.play(.mqttDisconnect)
     }
 
     func mqtt(_ mqtt: CocoaMQTT, didPublishMessage message: CocoaMQTTMessage, id: UInt16) {}

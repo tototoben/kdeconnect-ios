@@ -185,6 +185,9 @@ class KdeConnectSettings: NSObject, ObservableObject {
     @Published var keyboardNumpadOffset: CGSize {
         didSet { UserDefaults.standard.set(["w": keyboardNumpadOffset.width, "h": keyboardNumpadOffset.height], forKey: "kbNumpadOffset") }
     }
+    @Published var keyboardActionsOffset: CGSize {
+        didSet { UserDefaults.standard.set(["w": keyboardActionsOffset.width, "h": keyboardActionsOffset.height], forKey: "kbActionsOffset") }
+    }
     @Published var keyboardModifiersScale: CGFloat {
         didSet { UserDefaults.standard.set(keyboardModifiersScale, forKey: "kbModifiersScale") }
     }
@@ -194,14 +197,19 @@ class KdeConnectSettings: NSObject, ObservableObject {
     @Published var keyboardNumpadScale: CGFloat {
         didSet { UserDefaults.standard.set(keyboardNumpadScale, forKey: "kbNumpadScale") }
     }
+    @Published var keyboardActionsScale: CGFloat {
+        didSet { UserDefaults.standard.set(keyboardActionsScale, forKey: "kbActionsScale") }
+    }
 
     func resetKeyboardLayout() {
         keyboardModifiersOffset = CGSize(width: -8, height: 75.5)
         keyboardCharactersOffset = CGSize(width: -4, height: 184.5)
         keyboardNumpadOffset = CGSize(width: 65, height: 66)
+        keyboardActionsOffset = CGSize(width: 130, height: 66)
         keyboardModifiersScale = 1.0
         keyboardCharactersScale = 1.0
         keyboardNumpadScale = 1.0
+        keyboardActionsScale = 1.0
     }
 
     /// Intentionally not persisted
@@ -226,6 +234,7 @@ class KdeConnectSettings: NSObject, ObservableObject {
             "kbModifiersScale": 1.0,
             "kbCharactersScale": 1.0,
             "kbNumpadScale": 1.0,
+            "kbActionsScale": 1.0,
         ])
 #if !os(macOS)
         let fallbackName = UIDevice.current.name
@@ -250,9 +259,12 @@ class KdeConnectSettings: NSObject, ObservableObject {
         self.keyboardCharactersOffset = CGSize(width: charOff?["w"] as? CGFloat ?? -4, height: charOff?["h"] as? CGFloat ?? 184.5)
         let numOff = UserDefaults.standard.dictionary(forKey: "kbNumpadOffset")
         self.keyboardNumpadOffset = CGSize(width: numOff?["w"] as? CGFloat ?? 65, height: numOff?["h"] as? CGFloat ?? 66)
+        let actOff = UserDefaults.standard.dictionary(forKey: "kbActionsOffset")
+        self.keyboardActionsOffset = CGSize(width: actOff?["w"] as? CGFloat ?? 130, height: actOff?["h"] as? CGFloat ?? 66)
         self.keyboardModifiersScale = UserDefaults.standard.object(forKey: "kbModifiersScale") as? CGFloat ?? 1.0
         self.keyboardCharactersScale = UserDefaults.standard.object(forKey: "kbCharactersScale") as? CGFloat ?? 1.0
         self.keyboardNumpadScale = UserDefaults.standard.object(forKey: "kbNumpadScale") as? CGFloat ?? 1.0
+        self.keyboardActionsScale = UserDefaults.standard.object(forKey: "kbActionsScale") as? CGFloat ?? 1.0
         self.appIcon = AppIcon(rawValue: UserDefaults.standard.string(forKey: "appIcon")) ?? .default
         self.savePhotosToPhotosLibrary = UserDefaults.standard.bool(forKey: "savePhotosToPhotosLibrary")
         self.saveVideosToPhotosLibrary = UserDefaults.standard.bool(forKey: "saveVideosToPhotosLibrary")

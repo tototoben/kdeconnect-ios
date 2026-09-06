@@ -47,7 +47,6 @@ struct StationKeyboardRootView: View {
         ["1", "2", "3"],
     ]
 
-    @State private var ctrlActive: Bool = false
     @State private var shiftActive: Bool = false
     @State private var altActive: Bool = false
 
@@ -55,6 +54,7 @@ struct StationKeyboardRootView: View {
     @GestureState private var modifiersDrag: CGSize = .zero
     @GestureState private var charactersDrag: CGSize = .zero
     @GestureState private var numpadDrag: CGSize = .zero
+    @GestureState private var actionsDrag: CGSize = .zero
 
     // Scaling mode: double-tap to enter, drag up/down to scale, release to exit
     @State private var scalingPanel: ScalingPanel = .none
@@ -69,10 +69,12 @@ struct StationKeyboardRootView: View {
             let modW = 70 * scale * settings.keyboardModifiersScale
             let charW = 560 * scale * settings.keyboardCharactersScale
             let numW = 160 * scale * settings.keyboardNumpadScale
-            let totalW = modW + spacing + charW + spacing + numW
+            let actW = 70 * scale * settings.keyboardActionsScale
+            let totalW = modW + spacing + charW + spacing + numW + spacing + actW
             let modX = -totalW / 2 + modW / 2
             let charX: CGFloat = 0
-            let numX = totalW / 2 - numW / 2
+            let numX = totalW / 2 - numW / 2 - actW - spacing
+            let actX = totalW / 2 - actW / 2
 
             ZStack {
                 // Modifiers panel
@@ -116,6 +118,21 @@ struct StationKeyboardRootView: View {
                     scalingPanel: .numpad,
                     activeScalingPanel: $scalingPanel,
                     panelWidth: 160,
+                    panelHeight: 200,
+                    viewSize: viewSize
+                )
+
+                // Actions panel (enter + delete)
+                panelContainer(
+                    content: actionsPanelContent,
+                    dragHandle: AnyView(DragHandle(scale: scale * settings.keyboardActionsScale)),
+                    defaultX: actX,
+                    committedOffset: $settings.keyboardActionsOffset,
+                    dragState: $actionsDrag,
+                    committedScale: $settings.keyboardActionsScale,
+                    scalingPanel: .actions,
+                    activeScalingPanel: $scalingPanel,
+                    panelWidth: 70,
                     panelHeight: 200,
                     viewSize: viewSize
                 )
@@ -251,10 +268,6 @@ struct StationKeyboardRootView: View {
     private var modifiersPanelContent: AnyView {
         let s = scale * settings.keyboardModifiersScale
         return AnyView(VStack(spacing: 6 * s) {
-            ModifierKeyButton(title: "Ctrl", isActive: ctrlActive, scale: s) {
-                ctrlActive.toggle()
-                onModifierToggle(.control, ctrlActive)
-            }
             ModifierKeyButton(title: "Shift", isActive: shiftActive, scale: s) {
                 shiftActive.toggle()
                 onModifierToggle(.shift, shiftActive)
@@ -280,20 +293,22 @@ struct StationKeyboardRootView: View {
             ForEach(charRows.indices, id: \.self) { rowIndex in
                 HStack(spacing: 6 * s) {
                     ForEach(charRows[rowIndex], id: \.self) { key in
-                        KeyButton(title: key, scale: s, keyScale: ks) {
-                            onKey(key)
+                        let display = shiftActive ? key.uppercased() : key
+                        KeyButton(title: display, scale: s, keyScale: ks) {
+                            let sent = shiftActive ? key.uppercased() : key
+                            onKey(sent)
+                            if shiftActive {
+                                shiftActive = false
+                                onModifierToggle(.shift, false)
+                            }
                         }
                     }
                 }
             }
             HStack(spacing: 6 * s) {
-                KeyButton(title: "space", isWide: true, scale: s, keyScale: ks) {
+                KeyButton(title: "space", isWide: true, scale: s, keyScale: ks, sound: .keySpace) {
                     onSpace()
                 }
-                SpecialKeyButton(systemImage: "return", scale: s, keyScale: ks) {
-                    onReturn()
-                }
-                .frame(width: 72 * s)
             }
         }
         .frame(width: 560 * s)
@@ -304,6 +319,7 @@ struct StationKeyboardRootView: View {
 
     private var numpadPanelContent: AnyView {
         let s = scale * settings.keyboardNumpadScale
+        let keyWidth: CGFloat = 46
         return AnyView(VStack(spacing: 6 * s) {
             ForEach(numpadRows.indices, id: \.self) { rowIndex in
                 HStack(spacing: 6 * s) {
@@ -318,10 +334,7 @@ struct StationKeyboardRootView: View {
                 KeyButton(title: "0", scale: s) {
                     onKey("0")
                 }
-                .frame(width: 64 * s)
-                SpecialKeyButton(systemImage: "delete.left", scale: s) {
-                    onDelete()
-                }
+                .frame(width: keyWidth * s)
             }
         }
         .frame(width: 160 * s)
@@ -329,10 +342,26 @@ struct StationKeyboardRootView: View {
         .background(Color(white: 0.04))
         .cornerRadius(10 * s))
     }
+
+    private var actionsPanelContent: AnyView {
+        let s = scale * settings.keyboardActionsScale
+        return AnyView(VStack(spacing: 6 * s) {
+            SpecialKeyButton(systemImage: "delete.left", scale: s, sound: .keyDelete) {
+                onDelete()
+            }
+            SpecialKeyButton(systemImage: "return", scale: s, sound: .keyReturn) {
+                onReturn()
+            }
+        }
+        .frame(width: 70 * s)
+        .padding(.all, 6 * s)
+        .background(Color(white: 0.04))
+        .cornerRadius(10 * s))
+    }
 }
 
 private enum ScalingPanel {
-    case none, modifiers, characters, numpad
+    case none, modifiers, characters, numpad, actions
 }
 
 private struct DragHandle: View {
@@ -350,23 +379,46 @@ private struct KeyButton: View {
     var isWide: Bool = false
     var scale: CGFloat = 1.0
     var keyScale: CGFloat = 1.0
+    var sound: SoundEffect? = .keyPress
     let action: () -> Void
 
+    @GestureState private var isPressed: Bool = false
+
     var body: some View {
-        Button(action: {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            action()
-        }) {
-            Text(title)
-                .font(.system(size: 18 * scale * keyScale, weight: .medium))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
-                .background(
-                    RoundedRectangle(cornerRadius: 6 * scale)
-                        .fill(Color(white: 0.18))
-                )
-        }
-        .buttonStyle(KeyPressStyle(scale: scale))
+        keyLabel
+            .background(keyBackground)
+            .overlay(keyBorder)
+            .scaleEffect(isPressed ? 0.85 : 1.0)
+            .animation(.spring(response: 0.1, dampingFraction: 0.8), value: isPressed)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressed) { _, state, _ in
+                        state = true
+                    }
+                    .onEnded { _ in
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if let sound = sound { SoundManager.shared.play(sound) }
+                        action()
+                    }
+            )
+    }
+
+    private var keyLabel: some View {
+        Text(title)
+            .font(.system(size: 18 * scale * keyScale, weight: .medium))
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
+    }
+
+    private var keyBackground: some View {
+        RoundedRectangle(cornerRadius: 6 * scale)
+            .fill(isPressed ? Color(red: 0.3, green: 0.6, blue: 1.0, opacity: 0.5) : Color(white: 0.18))
+    }
+
+    private var keyBorder: some View {
+        RoundedRectangle(cornerRadius: 6 * scale)
+            .stroke(isPressed ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1.5 * scale)
     }
 }
 
@@ -374,36 +426,46 @@ private struct SpecialKeyButton: View {
     let systemImage: String
     var scale: CGFloat = 1.0
     var keyScale: CGFloat = 1.0
+    var sound: SoundEffect? = nil
     let action: () -> Void
 
-    var body: some View {
-        Button(action: {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            action()
-        }) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18 * scale * keyScale, weight: .medium))
-                .foregroundColor(Color(red: 0.6, green: 0.7, blue: 0.9))
-                .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
-                .background(
-                    RoundedRectangle(cornerRadius: 6 * scale)
-                        .fill(Color(white: 0.10))
-                )
-        }
-        .buttonStyle(KeyPressStyle(scale: scale))
-    }
-}
+    @GestureState private var isPressed: Bool = false
 
-private struct KeyPressStyle: ButtonStyle {
-    var scale: CGFloat = 1.0
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
-            .background(
-                RoundedRectangle(cornerRadius: 6 * scale)
-                    .fill(configuration.isPressed ? Color(white: 0.32) : Color.clear)
+    var body: some View {
+        keyLabel
+            .background(keyBackground)
+            .overlay(keyBorder)
+            .scaleEffect(isPressed ? 0.85 : 1.0)
+            .animation(.spring(response: 0.1, dampingFraction: 0.8), value: isPressed)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressed) { _, state, _ in
+                        state = true
+                    }
+                    .onEnded { _ in
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if let sound = sound { SoundManager.shared.play(sound) }
+                        action()
+                    }
             )
-            .animation(.spring(response: 0.15, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+
+    private var keyLabel: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 18 * scale * keyScale, weight: .medium))
+            .foregroundColor(Color(red: 0.6, green: 0.7, blue: 0.9))
+            .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
+    }
+
+    private var keyBackground: some View {
+        RoundedRectangle(cornerRadius: 6 * scale)
+            .fill(isPressed ? Color(red: 0.4, green: 0.5, blue: 0.9, opacity: 0.6) : Color(white: 0.10))
+    }
+
+    private var keyBorder: some View {
+        RoundedRectangle(cornerRadius: 6 * scale)
+            .stroke(isPressed ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1.5 * scale)
     }
 }
 
@@ -411,23 +473,47 @@ private struct ModifierKeyButton: View {
     let title: String
     var isActive: Bool = false
     var scale: CGFloat = 1.0
+    var sound: SoundEffect? = .modifierToggle
     let action: () -> Void
 
+    @GestureState private var isPressed: Bool = false
+
     var body: some View {
-        Button(action: {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            action()
-        }) {
-            Text(title)
-                .font(.system(size: 14 * scale, weight: .medium))
-                .foregroundColor(isActive ? .white : Color(red: 0.6, green: 0.7, blue: 0.9))
-                .frame(maxWidth: .infinity, minHeight: 42 * scale)
-                .background(
-                    RoundedRectangle(cornerRadius: 6 * scale)
-                        .fill(isActive ? Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 0.8) : Color(white: 0.10))
-                )
-        }
-        .buttonStyle(KeyPressStyle(scale: scale))
+        keyLabel
+            .background(keyBackground)
+            .overlay(keyBorder)
+            .scaleEffect(isPressed ? 0.85 : 1.0)
+            .animation(.spring(response: 0.1, dampingFraction: 0.8), value: isPressed)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressed) { _, state, _ in
+                        state = true
+                    }
+                    .onEnded { _ in
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if let sound = sound { SoundManager.shared.play(sound) }
+                        action()
+                    }
+            )
+    }
+
+    private var keyLabel: some View {
+        Text(title)
+            .font(.system(size: 14 * scale, weight: .medium))
+            .foregroundColor(isActive ? .white : Color(red: 0.6, green: 0.7, blue: 0.9))
+            .frame(maxWidth: .infinity, minHeight: 42 * scale)
+    }
+
+    private var keyBackground: some View {
+        RoundedRectangle(cornerRadius: 6 * scale)
+            .fill(isPressed ? Color(red: 0.3, green: 0.6, blue: 1.0, opacity: 0.4)
+                           : (isActive ? Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 0.8) : Color(white: 0.10)))
+    }
+
+    private var keyBorder: some View {
+        RoundedRectangle(cornerRadius: 6 * scale)
+            .stroke(isPressed ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1.5 * scale)
     }
 }
 
