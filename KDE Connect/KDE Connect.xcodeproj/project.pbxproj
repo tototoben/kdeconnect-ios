@@ -107,6 +107,7 @@
 		STA000022680000500CC21DD /* StationMqttClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000022680000600CC21DD /* StationMqttClient.swift */; };
 		STA000032680000700CC21DD /* StationCameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000032680000800CC21DD /* StationCameraManager.swift */; };
 		STA000042680000900CC21DD /* StationAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000042680000A00CC21DD /* StationAppDelegate.swift */; };
+		STA000052680000C00CC21DD /* KeyboardOnlyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = STA000052680000B00CC21DD /* KeyboardOnlyView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -242,6 +243,7 @@
 		STA000022680000600CC21DD /* StationMqttClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationMqttClient.swift; sourceTree = "<group>"; };
 		STA000032680000800CC21DD /* StationCameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationCameraManager.swift; sourceTree = "<group>"; };
 		STA000042680000A00CC21DD /* StationAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationAppDelegate.swift; sourceTree = "<group>"; };
+		STA000052680000B00CC21DD /* KeyboardOnlyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardOnlyView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -681,6 +683,7 @@
 				STA000022680000600CC21DD /* StationMqttClient.swift */,
 				STA000032680000800CC21DD /* StationCameraManager.swift */,
 				STA000042680000A00CC21DD /* StationAppDelegate.swift */,
+				STA000052680000B00CC21DD /* KeyboardOnlyView.swift */,
 			);
 			path = Station;
 			sourceTree = "<group>";
@@ -884,6 +887,7 @@
 				STA000022680000500CC21DD /* StationMqttClient.swift in Sources */,
 				STA000032680000700CC21DD /* StationCameraManager.swift in Sources */,
 				STA000042680000900CC21DD /* StationAppDelegate.swift in Sources */,
+				STA000052680000C00CC21DD /* KeyboardOnlyView.swift in Sources */,
 				D2A8720E282C95D700DE980E /* DeviceDiscoveryHelp.swift in Sources */,
 				D271710929F07E51000CDB7F /* FilesHelper.swift in Sources */,
 				D2E60C4129FDB06000502F07 /* SetupFileTransfersForUITests.swift in Sources */,

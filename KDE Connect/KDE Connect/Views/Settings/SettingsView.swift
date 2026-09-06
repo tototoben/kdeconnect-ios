@@ -122,6 +122,26 @@ struct SettingsView: View {
                         .accentColor(.primary)
                 }
 
+                Toggle(isOn: $kdeConnectSettingsForSettings.showConnectionDebug) {
+                    Label("Show Connection Status", systemImage: "antenna.radiowaves.left.and.right")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                }
+
+                Toggle(isOn: $kdeConnectSettingsForSettings.showKeyboardControls) {
+                    Label("Show Move/Resize Controls", systemImage: "move.3d")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                }
+
+                Button {
+                    kdeConnectSettingsForSettings.resetKeyboardLayout()
+                } label: {
+                    Label("Reset Keyboard Layout", systemImage: "arrow.counterclockwise")
+                        .labelStyle(.accessibilityTitleOnly)
+                        .accentColor(.primary)
+                }
+
                 AccessibleHStack {
                     Label("Upload URL", systemImage: "arrow.up.circle")
                         .labelStyle(.accessibilityTitleOnly)

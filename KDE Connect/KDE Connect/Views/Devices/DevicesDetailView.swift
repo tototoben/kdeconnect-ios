@@ -25,6 +25,8 @@ struct DevicesDetailView: View {
     @State private var showingPhotosPicker: Bool = false
     @State private var showingFilePicker: Bool = false
     @State private var showingPluginSettingsView: Bool = false
+    @State private var showingStationMode: Bool = false
+    @State private var showingKeyboardOnly: Bool = false
     
     @State var chosenFileURLs: [URL] = []
     @ObservedObject var viewModel = connectedDevicesViewModel
@@ -134,6 +136,16 @@ struct DevicesDetailView: View {
                     (backgroundService._devices[detailsDeviceId]!._plugins[.runCommand] as! RunCommand).requestCommandList()
                 }
             }
+            .fullScreenCover(isPresented: $showingStationMode) {
+                StationRemoteView()
+                    .environmentObject(KdeConnectSettings.shared)
+                    .environmentObject(connectedDevicesViewModel)
+            }
+            .fullScreenCover(isPresented: $showingKeyboardOnly) {
+                KeyboardOnlyView()
+                    .environmentObject(KdeConnectSettings.shared)
+                    .environmentObject(connectedDevicesViewModel)
+            }
         } else {
             VStack {
                 Spacer()
@@ -191,6 +203,21 @@ struct DevicesDetailView: View {
                 if ((backgroundService._devices[detailsDeviceId]!._pluginsEnableStatus[.mousePadRequest] != nil) && backgroundService._devices[detailsDeviceId]!._pluginsEnableStatus[.mousePadRequest] as! Bool) {
                     NavigationLink(destination: RemoteInputView(detailsDeviceId: self.detailsDeviceId)) {
                         Label("Remote Input", systemImage: "hand.tap")
+                    }
+                    .accentColor(.primary)
+
+                    Button {
+                        showingKeyboardOnly = true
+                    } label: {
+                        Label("Keyboard", systemImage: "keyboard")
+                    }
+                    .accentColor(.primary)
+
+                    Button {
+                        KdeConnectSettings.shared.stationTargetDeviceId = self.detailsDeviceId
+                        showingStationMode = true
+                    } label: {
+                        Label("Station Mode", systemImage: "rectangle.dashed")
                     }
                     .accentColor(.primary)
                 }

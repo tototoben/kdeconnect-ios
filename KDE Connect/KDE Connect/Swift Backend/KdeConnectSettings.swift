@@ -162,7 +162,48 @@ class KdeConnectSettings: NSObject, ObservableObject {
             UserDefaults.standard.set(stationUploadUrl, forKey: "stationUploadUrl")
         }
     }
-    
+
+    @Published var showConnectionDebug: Bool {
+        didSet {
+            UserDefaults.standard.set(showConnectionDebug, forKey: "showConnectionDebug")
+        }
+    }
+
+    @Published var showKeyboardControls: Bool {
+        didSet {
+            UserDefaults.standard.set(showKeyboardControls, forKey: "showKeyboardControls")
+        }
+    }
+
+    // Keyboard panel layout: persisted offsets and scales per panel
+    @Published var keyboardModifiersOffset: CGSize {
+        didSet { UserDefaults.standard.set(["w": keyboardModifiersOffset.width, "h": keyboardModifiersOffset.height], forKey: "kbModifiersOffset") }
+    }
+    @Published var keyboardCharactersOffset: CGSize {
+        didSet { UserDefaults.standard.set(["w": keyboardCharactersOffset.width, "h": keyboardCharactersOffset.height], forKey: "kbCharactersOffset") }
+    }
+    @Published var keyboardNumpadOffset: CGSize {
+        didSet { UserDefaults.standard.set(["w": keyboardNumpadOffset.width, "h": keyboardNumpadOffset.height], forKey: "kbNumpadOffset") }
+    }
+    @Published var keyboardModifiersScale: CGFloat {
+        didSet { UserDefaults.standard.set(keyboardModifiersScale, forKey: "kbModifiersScale") }
+    }
+    @Published var keyboardCharactersScale: CGFloat {
+        didSet { UserDefaults.standard.set(keyboardCharactersScale, forKey: "kbCharactersScale") }
+    }
+    @Published var keyboardNumpadScale: CGFloat {
+        didSet { UserDefaults.standard.set(keyboardNumpadScale, forKey: "kbNumpadScale") }
+    }
+
+    func resetKeyboardLayout() {
+        keyboardModifiersOffset = CGSize(width: -8, height: 75.5)
+        keyboardCharactersOffset = CGSize(width: -4, height: 184.5)
+        keyboardNumpadOffset = CGSize(width: 65, height: 66)
+        keyboardModifiersScale = 1.0
+        keyboardCharactersScale = 1.0
+        keyboardNumpadScale = 1.0
+    }
+
     /// Intentionally not persisted
     @Published var isDebugging: Bool
     @objc
@@ -180,6 +221,11 @@ class KdeConnectSettings: NSObject, ObservableObject {
             "stationMqttDebug": false,
             "stationUploadUrl": "http://b310-mac:8080/upload",
             "directIPs": ["192.168.88.193"],
+            "showConnectionDebug": true,
+            "showKeyboardControls": true,
+            "kbModifiersScale": 1.0,
+            "kbCharactersScale": 1.0,
+            "kbNumpadScale": 1.0,
         ])
 #if !os(macOS)
         let fallbackName = UIDevice.current.name
@@ -196,6 +242,17 @@ class KdeConnectSettings: NSObject, ObservableObject {
         self.launchIntoStationMode = UserDefaults.standard.object(forKey: "launchIntoStationMode") as? Bool ?? true
         self.stationMqttDebug = UserDefaults.standard.bool(forKey: "stationMqttDebug")
         self.stationUploadUrl = UserDefaults.standard.string(forKey: "stationUploadUrl") ?? "http://b310-mac:8080/upload"
+        self.showConnectionDebug = UserDefaults.standard.object(forKey: "showConnectionDebug") as? Bool ?? true
+        self.showKeyboardControls = UserDefaults.standard.object(forKey: "showKeyboardControls") as? Bool ?? true
+        let modOff = UserDefaults.standard.dictionary(forKey: "kbModifiersOffset")
+        self.keyboardModifiersOffset = CGSize(width: modOff?["w"] as? CGFloat ?? -8, height: modOff?["h"] as? CGFloat ?? 75.5)
+        let charOff = UserDefaults.standard.dictionary(forKey: "kbCharactersOffset")
+        self.keyboardCharactersOffset = CGSize(width: charOff?["w"] as? CGFloat ?? -4, height: charOff?["h"] as? CGFloat ?? 184.5)
+        let numOff = UserDefaults.standard.dictionary(forKey: "kbNumpadOffset")
+        self.keyboardNumpadOffset = CGSize(width: numOff?["w"] as? CGFloat ?? 65, height: numOff?["h"] as? CGFloat ?? 66)
+        self.keyboardModifiersScale = UserDefaults.standard.object(forKey: "kbModifiersScale") as? CGFloat ?? 1.0
+        self.keyboardCharactersScale = UserDefaults.standard.object(forKey: "kbCharactersScale") as? CGFloat ?? 1.0
+        self.keyboardNumpadScale = UserDefaults.standard.object(forKey: "kbNumpadScale") as? CGFloat ?? 1.0
         self.appIcon = AppIcon(rawValue: UserDefaults.standard.string(forKey: "appIcon")) ?? .default
         self.savePhotosToPhotosLibrary = UserDefaults.standard.bool(forKey: "savePhotosToPhotosLibrary")
         self.saveVideosToPhotosLibrary = UserDefaults.standard.bool(forKey: "saveVideosToPhotosLibrary")

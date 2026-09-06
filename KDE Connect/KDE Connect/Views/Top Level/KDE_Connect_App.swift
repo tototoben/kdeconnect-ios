@@ -56,7 +56,7 @@ import SwiftUI
 #if !os(macOS)
         WindowGroup {
             if kdeConnectSettingsForTopLevel.launchIntoStationMode {
-                StationRemoteView()
+                KeyboardOnlyView()
                     .preferredColorScheme(.dark)
                     .onAppear {
                         backgroundService.startDiscovery()
