@@ -35,11 +35,8 @@ struct StationKeyboardRootView: View {
 
     @ObservedObject private var settings = KdeConnectSettings.shared
 
-    private let charRows: [[String]] = [
-        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
-        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
-        ["z", "x", "c", "v", "b", "n", "m"],
-    ]
+    private var charRows: [[String]] { settings.keyboardLayout.charRows }
+    private var shiftRows: [[String]] { settings.keyboardLayout.shiftRows }
 
     private let numpadRows: [[String]] = [
         ["7", "8", "9"],
@@ -268,6 +265,9 @@ struct StationKeyboardRootView: View {
     private var modifiersPanelContent: AnyView {
         let s = scale * settings.keyboardModifiersScale
         return AnyView(VStack(spacing: 6 * s) {
+            ModifierKeyButton(title: settings.keyboardLayout.shortLabel, scale: s) {
+                settings.keyboardLayout = settings.keyboardLayout.next
+            }
             ModifierKeyButton(title: "Shift", isActive: shiftActive, scale: s) {
                 shiftActive.toggle()
                 onModifierToggle(.shift, shiftActive)
@@ -292,11 +292,12 @@ struct StationKeyboardRootView: View {
         return AnyView(VStack(spacing: 8 * s) {
             ForEach(charRows.indices, id: \.self) { rowIndex in
                 HStack(spacing: 6 * s) {
-                    ForEach(charRows[rowIndex], id: \.self) { key in
-                        let display = shiftActive ? key.uppercased() : key
-                        KeyButton(title: display, scale: s, keyScale: ks) {
-                            let sent = shiftActive ? key.uppercased() : key
-                            onKey(sent)
+                    ForEach(charRows[rowIndex].indices, id: \.self) { colIndex in
+                        let key = charRows[rowIndex][colIndex]
+                        let shifted = (shiftActive && colIndex < shiftRows[rowIndex].count)
+                            ? shiftRows[rowIndex][colIndex] : key
+                        KeyButton(title: shifted, scale: s, keyScale: ks) {
+                            onKey(shifted)
                             if shiftActive {
                                 shiftActive = false
                                 onModifierToggle(.shift, false)

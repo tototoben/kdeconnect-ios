@@ -175,6 +175,12 @@ class KdeConnectSettings: NSObject, ObservableObject {
         }
     }
 
+    @Published var keyboardLayout: KeyboardLayout {
+        didSet {
+            UserDefaults.standard.set(keyboardLayout.rawValue, forKey: "keyboardLayout")
+        }
+    }
+
     // Keyboard panel layout: persisted offsets and scales per panel
     @Published var keyboardModifiersOffset: CGSize {
         didSet { UserDefaults.standard.set(["w": keyboardModifiersOffset.width, "h": keyboardModifiersOffset.height], forKey: "kbModifiersOffset") }
@@ -231,6 +237,7 @@ class KdeConnectSettings: NSObject, ObservableObject {
             "directIPs": ["192.168.88.193"],
             "showConnectionDebug": true,
             "showKeyboardControls": true,
+            "keyboardLayout": "english",
             "kbModifiersScale": 1.0,
             "kbCharactersScale": 1.0,
             "kbNumpadScale": 1.0,
@@ -253,6 +260,7 @@ class KdeConnectSettings: NSObject, ObservableObject {
         self.stationUploadUrl = UserDefaults.standard.string(forKey: "stationUploadUrl") ?? "http://b310-mac:8080/upload"
         self.showConnectionDebug = UserDefaults.standard.object(forKey: "showConnectionDebug") as? Bool ?? true
         self.showKeyboardControls = UserDefaults.standard.object(forKey: "showKeyboardControls") as? Bool ?? true
+        self.keyboardLayout = KeyboardLayout(rawValue: UserDefaults.standard.string(forKey: "keyboardLayout") ?? "english") ?? .english
         let modOff = UserDefaults.standard.dictionary(forKey: "kbModifiersOffset")
         self.keyboardModifiersOffset = CGSize(width: modOff?["w"] as? CGFloat ?? -8, height: modOff?["h"] as? CGFloat ?? 75.5)
         let charOff = UserDefaults.standard.dictionary(forKey: "kbCharactersOffset")
