@@ -123,12 +123,6 @@ struct KeyboardOnlyView: View {
                     }
                     Spacer()
                     if !isKiosk {
-                        Button(action: cyclePreviewLayout, label: {
-                            Image(systemName: "rectangle.split.2x1")
-                                .font(.title2)
-                                .foregroundColor(StationChrome.ice.opacity(0.7))
-                                .padding(8)
-                        })
                         Button(action: { showingSettings = true }, label: {
                             Image(systemName: "gearshape")
                                 .font(.title2)
@@ -275,30 +269,6 @@ struct KeyboardOnlyView: View {
 
     private func markTyped() {
         hasTyped = true
-    }
-
-    private func cyclePreviewLayout() {
-        switch focusMode {
-        case .standard:
-            focusMode = .numeric
-        case .numeric:
-            choiceLeft = "YES"
-            choiceRight = "NO"
-            focusMode = .choice
-        case .choice where choiceLeft.uppercased() == "YES":
-            choiceLeft = "Beauty"
-            choiceRight = "Money"
-        case .choice:
-            sliderLeft = "Not very"
-            sliderRight = "Extremely"
-            sliderValue = 0.5
-            lastSentSlider = -1
-            focusMode = .scale
-        case .scale:
-            focusMode = .hidden
-        case .hidden:
-            focusMode = .standard
-        }
     }
 
     private func confirmEntry() {

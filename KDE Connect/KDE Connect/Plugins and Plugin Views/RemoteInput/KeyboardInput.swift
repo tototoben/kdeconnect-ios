@@ -206,284 +206,86 @@ struct StationKeyboardRootView: View {
     @State private var shiftActive: Bool = false
     @State private var altActive: Bool = false
 
-    // In-progress gesture state (resets to zero when gesture ends)
-    @GestureState private var modifiersDrag: CGSize = .zero
-    @GestureState private var charactersDrag: CGSize = .zero
-    @GestureState private var actionsDrag: CGSize = .zero
-
-    // Scaling mode: double-tap to enter, drag up/down to scale, release to exit
-    @State private var scalingPanel: ScalingPanel = .none
-
-    private let minScale: CGFloat = 0.5
-    private let maxScale: CGFloat = 3.0
-
     var body: some View {
         GeometryReader { geo in
-            let viewSize = geo.size
-            let spacing = 12 * scale
-            let modW = 70 * scale * settings.keyboardModifiersScale
-            let charW = 560 * scale * settings.keyboardCharactersScale
-            let actW = 70 * scale * settings.keyboardActionsScale
-            let totalW = modW + spacing + charW + spacing + actW
-            let modX = -totalW / 2 + modW / 2
-            let charX: CGFloat = 0
-            let actX = totalW / 2 - actW / 2
+            let pad: CGFloat = 16
+            let gap: CGFloat = 8
+            let innerW = max(geo.size.width - pad * 2, 1)
+            let innerH = max(geo.size.height - pad * 2, 1)
+            let actionW = min(max(innerW * 0.18, 96), 132)
+            let leftW = max(innerW - gap - actionW, 1)
+            let modifierH = min(max(innerH * 0.13, 52), 68)
+            let keysH = max(innerH - modifierH - gap, 1)
+            let letterFont = min(keysH * 0.11, 34)
+            let modifierFont = min(modifierH * 0.28, 16)
+            let actionIcon = min(actionW * 0.28, 28)
 
-            ZStack {
-                // Modifiers panel
-                panelContainer(
-                    content: modifiersPanelContent,
-                    dragHandle: AnyView(DragHandle(scale: scale * settings.keyboardModifiersScale)),
-                    defaultX: modX,
-                    committedOffset: $settings.keyboardModifiersOffset,
-                    dragState: $modifiersDrag,
-                    committedScale: $settings.keyboardModifiersScale,
-                    scalingPanel: .modifiers,
-                    activeScalingPanel: $scalingPanel,
-                    panelWidth: 70,
-                    panelHeight: 200,
-                    viewSize: viewSize
-                )
-
-                // Characters panel
-                panelContainer(
-                    content: charactersPanelContent,
-                    dragHandle: AnyView(DragHandle(scale: scale * settings.keyboardCharactersScale)),
-                    defaultX: charX,
-                    committedOffset: $settings.keyboardCharactersOffset,
-                    dragState: $charactersDrag,
-                    committedScale: $settings.keyboardCharactersScale,
-                    scalingPanel: .characters,
-                    activeScalingPanel: $scalingPanel,
-                    panelWidth: 560,
-                    panelHeight: 240,
-                    viewSize: viewSize
-                )
-
-                // Actions panel (enter + delete)
-                panelContainer(
-                    content: actionsPanelContent,
-                    dragHandle: AnyView(DragHandle(scale: scale * settings.keyboardActionsScale)),
-                    defaultX: actX,
-                    committedOffset: $settings.keyboardActionsOffset,
-                    dragState: $actionsDrag,
-                    committedScale: $settings.keyboardActionsScale,
-                    scalingPanel: .actions,
-                    activeScalingPanel: $scalingPanel,
-                    panelWidth: 70,
-                    panelHeight: 200,
-                    viewSize: viewSize
-                )
-            }
-            .frame(maxWidth: .infinity)
-            .frame(maxHeight: .infinity)
-        }
-    }
-
-    // MARK: - Panel container with handle-only drag
-
-    private func panelContainer(
-        content: AnyView,
-        dragHandle: AnyView,
-        defaultX: CGFloat,
-        committedOffset: Binding<CGSize>,
-        dragState: GestureState<CGSize>,
-        committedScale: Binding<CGFloat>,
-        scalingPanel: ScalingPanel,
-        activeScalingPanel: Binding<ScalingPanel>,
-        panelWidth: CGFloat,
-        panelHeight: CGFloat,
-        viewSize: CGSize
-    ) -> some View {
-        let controlsVisible = settings.showKeyboardControls
-        let isScaling = activeScalingPanel.wrappedValue == scalingPanel
-        let scaleAdjust = isScaling ? dragState.wrappedValue.height * 0.005 : 0
-        let liveScale = min(max(committedScale.wrappedValue + scaleAdjust, minScale), maxScale)
-        let effectiveScale = scale * liveScale
-        let panelSize = CGSize(width: panelWidth * effectiveScale, height: panelHeight * effectiveScale)
-        let dragOffset = isScaling ? CGSize.zero : dragState.wrappedValue
-        let contentOffset = CGSize(
-            width: defaultX + committedOffset.wrappedValue.width + dragOffset.width,
-            height: committedOffset.wrappedValue.height + dragOffset.height
-        )
-        let clampedContent = clampOffset(contentOffset, panelSize: panelSize, viewSize: viewSize)
-        let committedOnly = CGSize(
-            width: defaultX + committedOffset.wrappedValue.width,
-            height: committedOffset.wrappedValue.height
-        )
-        let isDragging = !isScaling && (abs(dragState.wrappedValue.width) > 1 || abs(dragState.wrappedValue.height) > 1)
-        let handleHeight = 24 * effectiveScale
-        let s = scale * committedScale.wrappedValue
-        let clampedHandle = clampOffset(committedOnly,
-            panelSize: CGSize(width: panelWidth * s, height: panelHeight * s),
-            viewSize: viewSize)
-
-        let handleWidth = panelWidth * effectiveScale
-        let handleView = dragHandle
-            .frame(width: handleWidth, height: handleHeight)
-            .contentShape(Rectangle())
-
-        let visualHandle = dragHandle
-            .frame(width: handleWidth, height: handleHeight)
-
-        return ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                Color.clear.frame(height: controlsVisible ? handleHeight : 0)
-                content
-            }
-            .scaleEffect(isScaling ? liveScale / committedScale.wrappedValue : 1.0, anchor: .top)
-            .offset(clampedContent)
-
-            if controlsVisible {
-                // Visual handle rides along with the content during drag
-                visualHandle
-                    .opacity(isDragging ? 1 : 0)
-                    .offset(clampedContent)
-                    .allowsHitTesting(false)
-
-                // Gesture handle stays at committed position (no feedback loop)
-                handleView
-                    .opacity(isDragging ? 0 : 1)
-                    .offset(clampedHandle)
-                    .gesture(
-                        DragGesture()
-                            .updating(dragState) { gesture, state, _ in
-                                state = gesture.translation
-                            }
-                            .onEnded { gesture in
-                                if activeScalingPanel.wrappedValue == scalingPanel {
-                                    let newScale = committedScale.wrappedValue + gesture.translation.height * 0.005
-                                    committedScale.wrappedValue = min(max(newScale, minScale), maxScale)
-                                    activeScalingPanel.wrappedValue = .none
-                                } else {
-                                    let raw = CGSize(
-                                        width: committedOffset.wrappedValue.width + gesture.translation.width,
-                                        height: committedOffset.wrappedValue.height + gesture.translation.height
-                                    )
-                                    let s = scale * committedScale.wrappedValue
-                                    committedOffset.wrappedValue = clampOffset(raw,
-                                        panelSize: CGSize(width: panelWidth * s, height: panelHeight * s),
-                                        viewSize: viewSize)
-                                }
-                            }
-                    )
-            }
-        }
-        .onTapGesture(count: 2) {
-            if controlsVisible {
-                if activeScalingPanel.wrappedValue == scalingPanel {
-                    activeScalingPanel.wrappedValue = .none
-                } else {
-                    activeScalingPanel.wrappedValue = scalingPanel
-                }
-            }
-        }
-        .overlay(
-            Group {
-                if isScaling {
-                    Rectangle()
-                        .stroke(StationChrome.ice.opacity(0.7), lineWidth: 2)
-                        .allowsHitTesting(false)
-                        .offset(clampedContent)
-                        .frame(width: panelWidth * effectiveScale, height: panelHeight * effectiveScale)
-                }
-            }
-        )
-    }
-
-    // MARK: - Viewport clamping
-
-    private func clampOffset(_ offset: CGSize, panelSize: CGSize, viewSize: CGSize) -> CGSize {
-        let xRange = viewSize.width - panelSize.width
-        let yRange = viewSize.height - panelSize.height
-        let clampedX: CGFloat = xRange <= 0 ? 0 : min(max(offset.width, -xRange / 2), xRange / 2)
-        let clampedY: CGFloat = yRange <= 0 ? 0 : min(max(offset.height, -yRange / 2), yRange / 2)
-        return CGSize(width: clampedX, height: clampedY)
-    }
-
-    // MARK: - Panels
-
-    private var modifiersPanelContent: AnyView {
-        let s = scale * settings.keyboardModifiersScale
-        return AnyView(VStack(spacing: 6 * s) {
-            ModifierKeyButton(title: settings.keyboardLayout.shortLabel, scale: s) {
-                settings.keyboardLayout = settings.keyboardLayout.next
-            }
-            ModifierKeyButton(title: "Shift", isActive: shiftActive, scale: s) {
-                shiftActive.toggle()
-                onModifierToggle(.shift, shiftActive)
-            }
-            ModifierKeyButton(title: "Alt", isActive: altActive, scale: s) {
-                altActive.toggle()
-                onModifierToggle(.alt, altActive)
-            }
-            ModifierKeyButton(title: "Tab", scale: s) {
-                onTab()
-            }
-        }
-        .frame(width: 70 * s)
-        .padding(.all, 6 * s)
-        .background(Color.clear))
-    }
-
-    private var charactersPanelContent: AnyView {
-        let s = scale * settings.keyboardCharactersScale
-        let ks: CGFloat = 1.5
-        return AnyView(VStack(spacing: 8 * s) {
-            ForEach(charRows.indices, id: \.self) { rowIndex in
-                HStack(spacing: 6 * s) {
-                    ForEach(charRows[rowIndex].indices, id: \.self) { colIndex in
-                        let key = charRows[rowIndex][colIndex]
-                        let shifted = (shiftActive && colIndex < shiftRows[rowIndex].count)
-                            ? shiftRows[rowIndex][colIndex] : key
-                        KeyButton(title: shifted, scale: s, keyScale: ks) {
-                            onKey(shifted)
-                            if shiftActive {
-                                shiftActive = false
-                                onModifierToggle(.shift, false)
-                            }
+            HStack(alignment: .top, spacing: gap) {
+                VStack(alignment: .leading, spacing: gap) {
+                    HStack(spacing: gap) {
+                        ModifierKeyButton(
+                            title: settings.keyboardLayout.shortLabel,
+                            fontSize: modifierFont
+                        ) {
+                            settings.keyboardLayout = settings.keyboardLayout.next
+                        }
+                        ModifierKeyButton(title: "Shift", isActive: shiftActive, fontSize: modifierFont) {
+                            shiftActive.toggle()
+                            onModifierToggle(.shift, shiftActive)
+                        }
+                        ModifierKeyButton(title: "Alt", isActive: altActive, fontSize: modifierFont) {
+                            altActive.toggle()
+                            onModifierToggle(.alt, altActive)
+                        }
+                        ModifierKeyButton(title: "Tab", fontSize: modifierFont) {
+                            onTab()
                         }
                     }
+                    .frame(width: leftW, height: modifierH)
+
+                    VStack(spacing: gap) {
+                        ForEach(charRows.indices, id: \.self) { rowIndex in
+                            HStack(spacing: gap) {
+                                ForEach(charRows[rowIndex].indices, id: \.self) { colIndex in
+                                    let key = charRows[rowIndex][colIndex]
+                                    let shifted = (shiftActive && colIndex < shiftRows[rowIndex].count)
+                                        ? shiftRows[rowIndex][colIndex] : key
+                                    KeyButton(title: shifted, fontSize: letterFont) {
+                                        onKey(shifted)
+                                        if shiftActive {
+                                            shiftActive = false
+                                            onModifierToggle(.shift, false)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        KeyButton(title: "SPACE", isWide: true, fontSize: letterFont * 0.55, sound: .keySpace) {
+                            onSpace()
+                        }
+                    }
+                    .frame(width: leftW, height: keysH)
                 }
-            }
-            HStack(spacing: 6 * s) {
-                KeyButton(title: "SPACE", isWide: true, scale: s, keyScale: ks, sound: .keySpace) {
-                    onSpace()
+
+                VStack(spacing: gap) {
+                    SpecialKeyButton(systemImage: "delete.left", iconSize: actionIcon, sound: .keyDelete) {
+                        onDelete()
+                    }
+                    SpecialKeyButton(
+                        systemImage: "return",
+                        iconSize: actionIcon,
+                        sound: .keyReturn,
+                        isAccent: true,
+                        isArmed: submitArmed
+                    ) {
+                        onReturn()
+                    }
                 }
+                .frame(width: actionW, height: innerH)
             }
+            .padding(pad)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
         }
-        .frame(width: 560 * s)
-        .padding(.all, 6 * s)
-        .background(Color.clear))
-    }
-
-    private var actionsPanelContent: AnyView {
-        let s = scale * settings.keyboardActionsScale
-        return AnyView(VStack(spacing: 6 * s) {
-            SpecialKeyButton(systemImage: "delete.left", scale: s, sound: .keyDelete) {
-                onDelete()
-            }
-            SpecialKeyButton(systemImage: "return", scale: s, sound: .keyReturn, isAccent: true, isArmed: submitArmed) {
-                onReturn()
-            }
-        }
-        .frame(width: 70 * s)
-        .padding(.all, 6 * s)
-        .background(Color.clear))
-    }
-}
-
-private enum ScalingPanel {
-    case none, modifiers, characters, actions
-}
-
-private struct DragHandle: View {
-    var scale: CGFloat = 1.0
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 0)
-            .fill(StationChrome.ice.opacity(0.45))
-            .frame(width: 30 * scale, height: 3 * scale)
     }
 }
 
@@ -492,10 +294,15 @@ private struct KeyButton: View {
     var isWide: Bool = false
     var scale: CGFloat = 1.0
     var keyScale: CGFloat = 1.0
+    var fontSize: CGFloat? = nil
     var sound: SoundEffect? = .keyPress
     let action: () -> Void
 
     @GestureState private var isPressed: Bool = false
+
+    private var resolvedFont: CGFloat {
+        fontSize ?? (title.count > 1 ? 12 : 18) * scale * keyScale
+    }
 
     var body: some View {
         keyLabel
@@ -521,11 +328,11 @@ private struct KeyButton: View {
     private var keyLabel: some View {
         StationHazeLabel(
             text: title,
-            fontSize: (title.count > 1 ? 12 : 18) * scale * keyScale,
-            kerning: title.count > 1 ? 1.6 : 0,
+            fontSize: resolvedFont,
+            kerning: title.count > 1 ? resolvedFont * 0.08 : 0,
             pressed: isPressed
         )
-        .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var keyBackground: some View {
@@ -552,6 +359,7 @@ private struct SpecialKeyButton: View {
     let systemImage: String
     var scale: CGFloat = 1.0
     var keyScale: CGFloat = 1.0
+    var iconSize: CGFloat? = nil
     var sound: SoundEffect? = nil
     var isAccent: Bool = false
     var isArmed: Bool = false
@@ -600,9 +408,9 @@ private struct SpecialKeyButton: View {
 
     private var keyLabel: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 18 * scale * keyScale, weight: .medium))
+            .font(.system(size: iconSize ?? (18 * scale * keyScale), weight: .medium))
             .foregroundColor(isPressed || isArmed ? StationChrome.frost : StationChrome.ice)
-            .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var keyBackground: some View {
@@ -620,6 +428,7 @@ private struct ModifierKeyButton: View {
     let title: String
     var isActive: Bool = false
     var scale: CGFloat = 1.0
+    var fontSize: CGFloat? = nil
     var sound: SoundEffect? = .modifierToggle
     let action: () -> Void
 
@@ -649,12 +458,12 @@ private struct ModifierKeyButton: View {
     private var keyLabel: some View {
         StationHazeLabel(
             text: title.uppercased(),
-            fontSize: 12 * scale,
-            kerning: 1.4,
+            fontSize: fontSize ?? 12 * scale,
+            kerning: (fontSize ?? 12 * scale) * 0.1,
             pressed: isActive || isPressed
         )
         .opacity(isActive || isPressed ? 1 : 0.82)
-        .frame(maxWidth: .infinity, minHeight: 42 * scale)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var keyBackground: some View {
