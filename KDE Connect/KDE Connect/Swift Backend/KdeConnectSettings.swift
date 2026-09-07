@@ -226,10 +226,15 @@ class KdeConnectSettings: NSObject, ObservableObject {
     @Published var isDebuggingNetworkPacket: Bool
     
     private override init() {
+        #if targetEnvironment(simulator)
+        let defaultBroker = "tcp://127.0.0.1:1883"
+        #else
+        let defaultBroker = "tcp://192.168.88.191:1883"
+        #endif
         UserDefaults.standard.register(defaults: [
             "savePhotosToPhotosLibrary": !DeviceType.isMac,
             "saveVideosToPhotosLibrary": !DeviceType.isMac,
-            "stationBrokerUri": "tcp://192.168.88.191:1883",
+            "stationBrokerUri": defaultBroker,
             "stationId": "1",
             "launchIntoStationMode": true,
             "stationMqttDebug": false,
@@ -252,7 +257,7 @@ class KdeConnectSettings: NSObject, ObservableObject {
         self.chosenTheme = UserDefaults.standard.string(forKey: "chosenTheme").flatMap(ColorScheme.init)
         self.directIPs = UserDefaults.standard.stringArray(forKey: "directIPs") ?? []
         self.disableUdpBroadcastDiscovery = UserDefaults.standard.bool(forKey: "disableUdpBroadcastDiscovery")
-        self.stationBrokerUri = UserDefaults.standard.string(forKey: "stationBrokerUri") ?? "tcp://192.168.88.191:1883"
+        self.stationBrokerUri = UserDefaults.standard.string(forKey: "stationBrokerUri") ?? defaultBroker
         self.stationId = UserDefaults.standard.string(forKey: "stationId") ?? "1"
         self.stationTargetDeviceId = UserDefaults.standard.string(forKey: "stationTargetDeviceId")
         self.launchIntoStationMode = UserDefaults.standard.object(forKey: "launchIntoStationMode") as? Bool ?? true

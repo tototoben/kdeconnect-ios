@@ -8,7 +8,171 @@
 
 import UIKit
 import SwiftUI
+import CoreImage
 import Introspect
+
+/// Matches orb-platform `original` station vibe (`MirrorJourney.css`).
+enum StationChrome {
+    static let frost = Color.black
+    static let ice = Color(red: 185 / 255, green: 220 / 255, blue: 235 / 255)
+    static let ink = Color.white
+    static let quiet = Color(red: 198 / 255, green: 214 / 255, blue: 220 / 255)
+    static let keyFill = Color(white: 0.06)
+    static let line = Color(red: 185 / 255, green: 220 / 255, blue: 235 / 255).opacity(0.55)
+    static let radius: CGFloat = 0
+
+    static func labelFont(size: CGFloat) -> Font {
+        Font.custom("HelveticaNeue-Medium", size: size)
+    }
+
+    static func displayFont(size: CGFloat) -> Font {
+        Font.custom("HelveticaNeue-Light", size: size)
+    }
+}
+
+/// Crisp Helvetica plus an ice smudge — the same two-layer haze as
+/// orb-platform `drawGrainyText` / JourneyButton, pre-rendered so the
+/// iPad 6th gen is not blurring thirty live SwiftUI labels.
+enum StationHazeGlyph {
+    private static let cache = NSCache<NSString, UIImage>()
+    private static let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    private static let ice = UIColor(red: 185 / 255, green: 220 / 255, blue: 235 / 255, alpha: 1)
+
+    static func image(
+        text: String,
+        fontSize: CGFloat,
+        light: Bool,
+        kerning: CGFloat,
+        pressed: Bool
+    ) -> UIImage {
+        let size = max(8, (fontSize * 2).rounded() / 2)
+        let key = "\(text)|\(size)|\(light)|\(kerning)|\(pressed)" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        let rendered = render(
+            text: text,
+            fontSize: size,
+            light: light,
+            kerning: kerning,
+            pressed: pressed
+        )
+        cache.setObject(rendered, forKey: key)
+        return rendered
+    }
+
+    private static func render(
+        text: String,
+        fontSize: CGFloat,
+        light: Bool,
+        kerning: CGFloat,
+        pressed: Bool
+    ) -> UIImage {
+        let crispName = light ? "HelveticaNeue-Light" : "HelveticaNeue-Medium"
+        let crispFont = UIFont(name: crispName, size: fontSize)
+            ?? .systemFont(ofSize: fontSize, weight: light ? .light : .medium)
+        let smudgeFont = UIFont(name: "HelveticaNeue-Bold", size: fontSize)
+            ?? .systemFont(ofSize: fontSize, weight: .bold)
+        let crispColor = pressed ? UIColor.black : UIColor.white.withAlphaComponent(0.88)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: crispFont,
+            .kern: kerning,
+            .foregroundColor: crispColor,
+        ]
+        let textSize = (text as NSString).size(withAttributes: attrs)
+        let blurRadius = max(3.5, fontSize * 0.26)
+        let pad = ceil(blurRadius * 2.6)
+        let canvas = CGSize(
+            width: max(2, ceil(textSize.width + pad * 2)),
+            height: max(2, ceil(textSize.height + pad * 2))
+        )
+        let origin = CGPoint(x: pad, y: pad)
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = UIScreen.main.scale
+        let renderer = UIGraphicsImageRenderer(size: canvas, format: format)
+
+        guard !pressed else {
+            return renderer.image { _ in
+                (text as NSString).draw(at: origin, withAttributes: attrs)
+            }
+        }
+
+        let smudgeSource = renderer.image { _ in
+            (text as NSString).draw(at: origin, withAttributes: [
+                .font: smudgeFont,
+                .kern: kerning,
+                .foregroundColor: ice,
+            ])
+        }
+        let halo = blurred(smudgeSource, radius: blurRadius * 1.55) ?? smudgeSource
+        let wet = blurred(smudgeSource, radius: blurRadius) ?? smudgeSource
+
+        return renderer.image { _ in
+            halo.draw(in: CGRect(origin: .zero, size: canvas), blendMode: .normal, alpha: 0.55)
+            wet.draw(in: CGRect(origin: .zero, size: canvas), blendMode: .plusLighter, alpha: 0.82)
+            wet.draw(in: CGRect(origin: .zero, size: canvas), blendMode: .plusLighter, alpha: 0.4)
+            (text as NSString).draw(at: origin, withAttributes: attrs)
+        }
+    }
+
+    private static func blurred(_ image: UIImage, radius: CGFloat) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        let input = CIImage(cgImage: cgImage)
+        guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
+        filter.setValue(input, forKey: kCIInputImageKey)
+        filter.setValue(radius * image.scale, forKey: kCIInputRadiusKey)
+        guard let output = filter.outputImage,
+              let cgOut = ciContext.createCGImage(output, from: input.extent)
+        else { return nil }
+        return UIImage(cgImage: cgOut, scale: image.scale, orientation: .up)
+    }
+}
+
+struct StationHazeLabel: View {
+    let text: String
+    var fontSize: CGFloat
+    var light: Bool = false
+    var kerning: CGFloat = 0
+    var pressed: Bool = false
+
+    var body: some View {
+        Image(uiImage: rendered)
+            .renderingMode(.original)
+    }
+
+    private var rendered: UIImage {
+        StationHazeGlyph.image(
+            text: text,
+            fontSize: fontSize,
+            light: light,
+            kerning: kerning,
+            pressed: pressed
+        )
+    }
+}
+
+enum StationIceGrain {
+    static let image: UIImage = {
+        let size = 96
+        UIGraphicsBeginImageContextWithOptions(CGSize(width: size, height: size), false, 1)
+        defer { UIGraphicsEndImageContext() }
+        guard let ctx = UIGraphicsGetCurrentContext() else { return UIImage() }
+        for _ in 0..<1100 {
+            let x = CGFloat.random(in: 0..<CGFloat(size))
+            let y = CGFloat.random(in: 0..<CGFloat(size))
+            ctx.setFillColor(UIColor.white.withAlphaComponent(CGFloat.random(in: 0.05...0.32)).cgColor)
+            ctx.fill(CGRect(x: x, y: y, width: 1, height: 1))
+        }
+        return UIGraphicsGetImageFromCurrentImageContext() ?? UIImage()
+    }()
+
+    static func overlay(opacity: Double) -> some View {
+        Image(uiImage: image)
+            .resizable(resizingMode: .tile)
+            .opacity(opacity)
+            .blendMode(.overlay)
+            .allowsHitTesting(false)
+    }
+}
 
 extension View {
     public func introspectKeyboardListener(customize: @escaping (KeyboardListener) -> Void) -> some View {
@@ -32,17 +196,12 @@ struct StationKeyboardRootView: View {
     let onTab: () -> Void
     let onModifierToggle: (RemoteInput.KeyModifier, Bool) -> Void
     var scale: CGFloat = 1.0
+    var submitArmed: Bool = false
 
     @ObservedObject private var settings = KdeConnectSettings.shared
 
     private var charRows: [[String]] { settings.keyboardLayout.charRows }
     private var shiftRows: [[String]] { settings.keyboardLayout.shiftRows }
-
-    private let numpadRows: [[String]] = [
-        ["7", "8", "9"],
-        ["4", "5", "6"],
-        ["1", "2", "3"],
-    ]
 
     @State private var shiftActive: Bool = false
     @State private var altActive: Bool = false
@@ -50,7 +209,6 @@ struct StationKeyboardRootView: View {
     // In-progress gesture state (resets to zero when gesture ends)
     @GestureState private var modifiersDrag: CGSize = .zero
     @GestureState private var charactersDrag: CGSize = .zero
-    @GestureState private var numpadDrag: CGSize = .zero
     @GestureState private var actionsDrag: CGSize = .zero
 
     // Scaling mode: double-tap to enter, drag up/down to scale, release to exit
@@ -65,12 +223,10 @@ struct StationKeyboardRootView: View {
             let spacing = 12 * scale
             let modW = 70 * scale * settings.keyboardModifiersScale
             let charW = 560 * scale * settings.keyboardCharactersScale
-            let numW = 160 * scale * settings.keyboardNumpadScale
             let actW = 70 * scale * settings.keyboardActionsScale
-            let totalW = modW + spacing + charW + spacing + numW + spacing + actW
+            let totalW = modW + spacing + charW + spacing + actW
             let modX = -totalW / 2 + modW / 2
             let charX: CGFloat = 0
-            let numX = totalW / 2 - numW / 2 - actW - spacing
             let actX = totalW / 2 - actW / 2
 
             ZStack {
@@ -101,21 +257,6 @@ struct StationKeyboardRootView: View {
                     activeScalingPanel: $scalingPanel,
                     panelWidth: 560,
                     panelHeight: 240,
-                    viewSize: viewSize
-                )
-
-                // Numpad panel
-                panelContainer(
-                    content: numpadPanelContent,
-                    dragHandle: AnyView(DragHandle(scale: scale * settings.keyboardNumpadScale)),
-                    defaultX: numX,
-                    committedOffset: $settings.keyboardNumpadOffset,
-                    dragState: $numpadDrag,
-                    committedScale: $settings.keyboardNumpadScale,
-                    scalingPanel: .numpad,
-                    activeScalingPanel: $scalingPanel,
-                    panelWidth: 160,
-                    panelHeight: 200,
                     viewSize: viewSize
                 )
 
@@ -240,8 +381,8 @@ struct StationKeyboardRootView: View {
         .overlay(
             Group {
                 if isScaling {
-                    RoundedRectangle(cornerRadius: 10 * effectiveScale)
-                        .stroke(Color(red: 0.3, green: 0.6, blue: 1.0, opacity: 0.6), lineWidth: 2)
+                    Rectangle()
+                        .stroke(StationChrome.ice.opacity(0.7), lineWidth: 2)
                         .allowsHitTesting(false)
                         .offset(clampedContent)
                         .frame(width: panelWidth * effectiveScale, height: panelHeight * effectiveScale)
@@ -282,8 +423,7 @@ struct StationKeyboardRootView: View {
         }
         .frame(width: 70 * s)
         .padding(.all, 6 * s)
-        .background(Color(white: 0.04))
-        .cornerRadius(10 * s))
+        .background(Color.clear))
     }
 
     private var charactersPanelContent: AnyView {
@@ -307,41 +447,14 @@ struct StationKeyboardRootView: View {
                 }
             }
             HStack(spacing: 6 * s) {
-                KeyButton(title: "space", isWide: true, scale: s, keyScale: ks, sound: .keySpace) {
+                KeyButton(title: "SPACE", isWide: true, scale: s, keyScale: ks, sound: .keySpace) {
                     onSpace()
                 }
             }
         }
         .frame(width: 560 * s)
         .padding(.all, 6 * s)
-        .background(Color(white: 0.04))
-        .cornerRadius(10 * s))
-    }
-
-    private var numpadPanelContent: AnyView {
-        let s = scale * settings.keyboardNumpadScale
-        let keyWidth: CGFloat = 46
-        return AnyView(VStack(spacing: 6 * s) {
-            ForEach(numpadRows.indices, id: \.self) { rowIndex in
-                HStack(spacing: 6 * s) {
-                    ForEach(numpadRows[rowIndex], id: \.self) { num in
-                        KeyButton(title: num, scale: s) {
-                            onKey(num)
-                        }
-                    }
-                }
-            }
-            HStack(spacing: 6 * s) {
-                KeyButton(title: "0", scale: s) {
-                    onKey("0")
-                }
-                .frame(width: keyWidth * s)
-            }
-        }
-        .frame(width: 160 * s)
-        .padding(.all, 6 * s)
-        .background(Color(white: 0.04))
-        .cornerRadius(10 * s))
+        .background(Color.clear))
     }
 
     private var actionsPanelContent: AnyView {
@@ -350,28 +463,27 @@ struct StationKeyboardRootView: View {
             SpecialKeyButton(systemImage: "delete.left", scale: s, sound: .keyDelete) {
                 onDelete()
             }
-            SpecialKeyButton(systemImage: "return", scale: s, sound: .keyReturn) {
+            SpecialKeyButton(systemImage: "return", scale: s, sound: .keyReturn, isAccent: true, isArmed: submitArmed) {
                 onReturn()
             }
         }
         .frame(width: 70 * s)
         .padding(.all, 6 * s)
-        .background(Color(white: 0.04))
-        .cornerRadius(10 * s))
+        .background(Color.clear))
     }
 }
 
 private enum ScalingPanel {
-    case none, modifiers, characters, numpad, actions
+    case none, modifiers, characters, actions
 }
 
 private struct DragHandle: View {
     var scale: CGFloat = 1.0
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 2 * scale)
-            .fill(Color.white.opacity(0.2))
-            .frame(width: 30 * scale, height: 4 * scale)
+        RoundedRectangle(cornerRadius: 0)
+            .fill(StationChrome.ice.opacity(0.45))
+            .frame(width: 30 * scale, height: 3 * scale)
     }
 }
 
@@ -388,9 +500,10 @@ private struct KeyButton: View {
     var body: some View {
         keyLabel
             .background(keyBackground)
+            .overlay(StationIceGrain.overlay(opacity: isPressed ? 0.28 : 0.12))
             .overlay(keyBorder)
-            .scaleEffect(isPressed ? 0.85 : 1.0)
-            .animation(.spring(response: 0.1, dampingFraction: 0.8), value: isPressed)
+            .shadow(color: StationChrome.ice.opacity(isPressed ? 0.42 : 0), radius: isPressed ? 16 : 0)
+            .animation(.easeOut(duration: 0.12), value: isPressed)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -406,20 +519,32 @@ private struct KeyButton: View {
     }
 
     private var keyLabel: some View {
-        Text(title)
-            .font(.system(size: 18 * scale * keyScale, weight: .medium))
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
+        StationHazeLabel(
+            text: title,
+            fontSize: (title.count > 1 ? 12 : 18) * scale * keyScale,
+            kerning: title.count > 1 ? 1.6 : 0,
+            pressed: isPressed
+        )
+        .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
     }
 
     private var keyBackground: some View {
-        RoundedRectangle(cornerRadius: 6 * scale)
-            .fill(isPressed ? Color(red: 0.3, green: 0.6, blue: 1.0, opacity: 0.5) : Color(white: 0.18))
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        isPressed ? StationChrome.ice : StationChrome.ice.opacity(0.10),
+                        isPressed ? StationChrome.ice : StationChrome.keyFill,
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
     }
 
     private var keyBorder: some View {
-        RoundedRectangle(cornerRadius: 6 * scale)
-            .stroke(isPressed ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1.5 * scale)
+        Rectangle()
+            .stroke(isPressed ? StationChrome.ice : StationChrome.line, lineWidth: 1)
     }
 }
 
@@ -428,6 +553,8 @@ private struct SpecialKeyButton: View {
     var scale: CGFloat = 1.0
     var keyScale: CGFloat = 1.0
     var sound: SoundEffect? = nil
+    var isAccent: Bool = false
+    var isArmed: Bool = false
     let action: () -> Void
 
     @GestureState private var isPressed: Bool = false
@@ -435,9 +562,14 @@ private struct SpecialKeyButton: View {
     var body: some View {
         keyLabel
             .background(keyBackground)
+            .overlay(StationIceGrain.overlay(opacity: isPressed ? 0.28 : 0.14))
             .overlay(keyBorder)
-            .scaleEffect(isPressed ? 0.85 : 1.0)
-            .animation(.spring(response: 0.1, dampingFraction: 0.8), value: isPressed)
+            .shadow(
+                color: StationChrome.ice.opacity(glowOpacity),
+                radius: glowRadius
+            )
+            .animation(.easeOut(duration: 0.12), value: isPressed)
+            .animation(.easeInOut(duration: 0.45), value: isArmed)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -452,21 +584,35 @@ private struct SpecialKeyButton: View {
             )
     }
 
+    private var glowOpacity: Double {
+        if isPressed { return 0.8 }
+        if isArmed { return 0.55 }
+        if isAccent { return 0.28 }
+        return 0
+    }
+
+    private var glowRadius: CGFloat {
+        if isPressed { return 18 }
+        if isArmed { return 16 }
+        if isAccent { return 8 }
+        return 0
+    }
+
     private var keyLabel: some View {
         Image(systemName: systemImage)
             .font(.system(size: 18 * scale * keyScale, weight: .medium))
-            .foregroundColor(Color(red: 0.6, green: 0.7, blue: 0.9))
+            .foregroundColor(isPressed || isArmed ? StationChrome.frost : StationChrome.ice)
             .frame(maxWidth: .infinity, minHeight: 42 * scale * keyScale)
     }
 
     private var keyBackground: some View {
-        RoundedRectangle(cornerRadius: 6 * scale)
-            .fill(isPressed ? Color(red: 0.4, green: 0.5, blue: 0.9, opacity: 0.6) : Color(white: 0.10))
+        Rectangle()
+            .fill(isPressed || isArmed ? StationChrome.ice : StationChrome.keyFill)
     }
 
     private var keyBorder: some View {
-        RoundedRectangle(cornerRadius: 6 * scale)
-            .stroke(isPressed ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1.5 * scale)
+        Rectangle()
+            .stroke((isPressed || isArmed || isAccent) ? StationChrome.ice : StationChrome.line, lineWidth: 1)
     }
 }
 
@@ -482,9 +628,10 @@ private struct ModifierKeyButton: View {
     var body: some View {
         keyLabel
             .background(keyBackground)
+            .overlay(StationIceGrain.overlay(opacity: isPressed ? 0.28 : 0.12))
             .overlay(keyBorder)
-            .scaleEffect(isPressed ? 0.85 : 1.0)
-            .animation(.spring(response: 0.1, dampingFraction: 0.8), value: isPressed)
+            .shadow(color: StationChrome.ice.opacity(isPressed ? 0.42 : 0), radius: isPressed ? 16 : 0)
+            .animation(.easeOut(duration: 0.12), value: isPressed)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -500,21 +647,24 @@ private struct ModifierKeyButton: View {
     }
 
     private var keyLabel: some View {
-        Text(title)
-            .font(.system(size: 14 * scale, weight: .medium))
-            .foregroundColor(isActive ? .white : Color(red: 0.6, green: 0.7, blue: 0.9))
-            .frame(maxWidth: .infinity, minHeight: 42 * scale)
+        StationHazeLabel(
+            text: title.uppercased(),
+            fontSize: 12 * scale,
+            kerning: 1.4,
+            pressed: isActive || isPressed
+        )
+        .opacity(isActive || isPressed ? 1 : 0.82)
+        .frame(maxWidth: .infinity, minHeight: 42 * scale)
     }
 
     private var keyBackground: some View {
-        RoundedRectangle(cornerRadius: 6 * scale)
-            .fill(isPressed ? Color(red: 0.3, green: 0.6, blue: 1.0, opacity: 0.4)
-                           : (isActive ? Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 0.8) : Color(white: 0.10)))
+        Rectangle()
+            .fill(isPressed || isActive ? StationChrome.ice : StationChrome.keyFill)
     }
 
     private var keyBorder: some View {
-        RoundedRectangle(cornerRadius: 6 * scale)
-            .stroke(isPressed ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1.5 * scale)
+        Rectangle()
+            .stroke((isPressed || isActive) ? StationChrome.ice : StationChrome.line, lineWidth: 1)
     }
 }
 
@@ -667,5 +817,25 @@ fileprivate struct _KeyboardListenerPlaceholderView: UIViewRepresentable {
         // do nothing
     }
 }
+
+#if DEBUG
+@available(iOS 15.0, *)
+struct StationKeyboardRootView_Previews: PreviewProvider {
+    static var previews: some View {
+        StationKeyboardRootView(
+            onKey: { _ in },
+            onDelete: {},
+            onReturn: {},
+            onSpace: {},
+            onTab: {},
+            onModifierToggle: { _, _ in }
+        )
+        .background(Color.black)
+        .previewInterfaceOrientation(.landscapeLeft)
+        .previewDevice("iPad (9th generation)")
+        .previewDisplayName("Station keyboard")
+    }
+}
+#endif
 
 #endif

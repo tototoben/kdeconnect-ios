@@ -21,6 +21,15 @@ struct SettingsView: View {
     /// Sentinel for the "Auto-select" picker option (nil stationTargetDeviceId).
     private static let autoSelectTag = ""
 
+    private static func stationPickerTitle(_ id: String) -> String {
+        switch id {
+        case "1": return "Station I"
+        case "2": return "Station II"
+        case "3": return "Station III"
+        default: return "Station \(id)"
+        }
+    }
+
     var body: some View {
         List {
             // These could go in sections to give them each descriptions and space
@@ -86,10 +95,10 @@ struct SettingsView: View {
 
                 Picker(selection: $kdeConnectSettingsForSettings.stationId) {
                     ForEach(KdeConnectSettings.StationIds, id: \.self) { id in
-                        Text("Station \(id)").tag(id)
+                        Text(Self.stationPickerTitle(id)).tag(id)
                     }
                 } label: {
-                    Label("Station ID", systemImage: "number")
+                    Label("This iPad's station", systemImage: "number")
                         .labelStyle(.accessibilityTitleOnly)
                         .accentColor(.primary)
                 }

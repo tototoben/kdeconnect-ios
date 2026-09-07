@@ -15,6 +15,9 @@
 #import "KeychainItemWrapper.h"
 
 OSStatus generateSecIdentityForUUID(NSString *uuid);
+#if !TARGET_OS_OSX
+SecIdentityRef copyLastGeneratedHostIdentity(void);
+#endif
 NSData* getPublicKeyDERFromCertificate(SecCertificateRef certificate);
 #if TARGET_OS_OSX
 NSString* extractSecCertificateDigest(SecCertificateRef certificate);

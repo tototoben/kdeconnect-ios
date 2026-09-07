@@ -26,6 +26,29 @@
 
 @import os.log;
 
+#if !TARGET_OS_OSX
+static SecIdentityRef sLastGeneratedIdentity = NULL;
+
+SecIdentityRef copyLastGeneratedHostIdentity(void)
+{
+    if (sLastGeneratedIdentity == NULL) {
+        return NULL;
+    }
+    return (SecIdentityRef)CFRetain(sLastGeneratedIdentity);
+}
+
+static void rememberGeneratedIdentity(SecIdentityRef identity)
+{
+    if (sLastGeneratedIdentity != NULL) {
+        CFRelease(sLastGeneratedIdentity);
+        sLastGeneratedIdentity = NULL;
+    }
+    if (identity != NULL) {
+        sLastGeneratedIdentity = (SecIdentityRef)CFRetain(identity);
+    }
+}
+#endif
+
 NSString* getSslError(void) {
     char buf[256];
     ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
@@ -205,12 +228,13 @@ OSStatus generateSecIdentityForUUID(NSString *uuid)
     OSStatus securityError = SecPKCS12Import((CFDataRef) p12Data,
                                              (CFDictionaryRef)options, &items);
 #if !TARGET_OS_OSX
-    SecIdentityRef identityApp;
+    SecIdentityRef identityApp = NULL;
     if (securityError == noErr && CFArrayGetCount(items) > 0) {
         CFDictionaryRef identityDict = CFArrayGetValueAtIndex(items, 0);
 
         identityApp = (SecIdentityRef)CFDictionaryGetValue(identityDict,
                                                            kSecImportItemIdentity);
+        rememberGeneratedIdentity(identityApp);
 
         NSDictionary* addQuery = @{
             (id)kSecValueRef:   (__bridge id)identityApp,
@@ -220,9 +244,9 @@ OSStatus generateSecIdentityForUUID(NSString *uuid)
         };
         OSStatus status = SecItemAdd((__bridge CFDictionaryRef)addQuery, NULL);
         if (status != errSecSuccess) {
-            // Handle the error
-            os_log_with_type(logger, OS_LOG_TYPE_FAULT, "Error %d", status);
-            return 1;
+            // Simulator / unsigned builds often cannot persist identities.
+            // Keep the in-memory identity so launch can continue.
+            os_log_with_type(logger, OS_LOG_TYPE_ERROR, "SecItemAdd failed (%d); using in-memory identity", (int)status);
         }
     }
 #endif
@@ -231,7 +255,7 @@ OSStatus generateSecIdentityForUUID(NSString *uuid)
     [[NSFileManager defaultManager] removeItemAtPath:p12FilePath error:nil];
 
 #if !TARGET_OS_OSX
-    return noErr;
+    return identityApp != NULL ? noErr : (securityError != noErr ? securityError : errSecItemNotFound);
 #else
     return securityError;
 #endif

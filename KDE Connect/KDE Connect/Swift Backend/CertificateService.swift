@@ -63,6 +63,9 @@ import CryptoKit
             if generateSecIdentityForUUID(KdeConnectSettings.getUUID()) == noErr {
                 SecItemCopyMatching(keychainItemQuery, &identityApp)
             }
+            if identityApp == nil, let generated = copyLastGeneratedHostIdentity() {
+                identityApp = generated.takeRetainedValue() as AnyObject
+            }
 #else
             // remove old identity on macOS
             // normally will print error -25300 at the first launch as there is no identity
@@ -72,6 +75,10 @@ import CryptoKit
                 macFetchIdentity()
             }
 #endif
+        }
+        guard identityApp != nil else {
+            Logger().error("Host TLS identity missing after keychain load/generate")
+            preconditionFailure("Host TLS identity could not be created")
         }
         return (identityApp as! SecIdentity)
     }

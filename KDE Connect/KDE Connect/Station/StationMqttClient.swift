@@ -123,9 +123,9 @@ final class StationMqttClient: CocoaMQTTDelegate {
     func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
         logger.info("Connect ack: \(ack)")
         if ack == .accept {
-            logger.info("Subscribing to \(self.controlTopic)")
+            logger.info("Subscribing to \(self.controlTopic) and \(self.eventTopic)")
             mqtt.subscribe(controlTopic, qos: Self.qos)
-            SoundManager.shared.play(.mqttConnect)
+            mqtt.subscribe(eventTopic, qos: Self.qos)
         }
     }
 
@@ -139,17 +139,77 @@ final class StationMqttClient: CocoaMQTTDelegate {
 
     func mqtt(_ mqtt: CocoaMQTT, didReceiveMessage message: CocoaMQTTMessage, id: UInt16) {
         logger.info("Received on \(message.topic)")
-        guard message.topic == controlTopic else { return }
-        guard let data = message.string,
-              let jsonData = data.data(using: .utf8),
-              let payload = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+        guard let jsonData = message.string?.data(using: .utf8),
+              let raw = try? JSONSerialization.jsonObject(with: jsonData),
+              let payload = Self.dictionary(raw)
         else { return }
 
-        if payload["ts"] == nil || payload["src"] == nil || payload["action"] == nil {
+        if message.topic == controlTopic || message.topic.hasSuffix("/ui/control") {
+            if payload["ts"] == nil || payload["src"] == nil || payload["action"] == nil {
+                return
+            }
+            listener?.onControlMessage(payload)
             return
         }
-        SoundManager.shared.play(.mqttMessage)
-        listener?.onControlMessage(payload)
+
+        if message.topic == eventTopic || message.topic.hasSuffix("/ui/event") {
+            guard let control = Self.keyboardFocusControl(from: payload) else { return }
+            listener?.onControlMessage(control)
+        }
+    }
+
+    /// Maps a kiosk `keyboard_focus` event onto the same control actions the
+    /// remote already understands (numpad / yes-no / letters / hidden).
+    static func keyboardFocusControl(from payload: [String: Any]) -> [String: Any]? {
+        guard (payload["event"] as? String) == "keyboard_focus" else { return nil }
+        let data = dictionary(payload["data"]) ?? [:]
+        let mode = (data["mode"] as? String) ?? (payload["mode"] as? String) ?? ""
+        let action: String
+        switch mode {
+        case "numeric": action = "numericFocused"
+        case "yesno": action = "yesNoFocused"
+        case "choice": action = "choiceFocused"
+        case "scale": action = "scaleFocused"
+        case "hidden": action = "keyboardHidden"
+        case "text": action = "textFocused"
+        default: return nil
+        }
+        var control: [String: Any] = [
+            "ts": payload["ts"] as Any,
+            "src": payload["src"] as Any,
+            "action": action,
+        ]
+        if let left = (data["left"] as? String) ?? (payload["left"] as? String), !left.isEmpty {
+            control["left"] = left
+        }
+        if let right = (data["right"] as? String) ?? (payload["right"] as? String), !right.isEmpty {
+            control["right"] = right
+        }
+        if let value = data["value"] ?? payload["value"] {
+            control["value"] = value
+        }
+        return control
+    }
+
+    private static func dictionary(_ value: Any?) -> [String: Any]? {
+        if let dict = value as? [String: Any] {
+            return dict
+        }
+        if let dict = value as? NSDictionary {
+            var result: [String: Any] = [:]
+            for (key, val) in dict {
+                if let key = key as? String {
+                    result[key] = val
+                }
+            }
+            return result
+        }
+        if let string = value as? String,
+           let data = string.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) {
+            return dictionary(obj)
+        }
+        return nil
     }
 
     func mqttDidPing(_ mqtt: CocoaMQTT) {}
@@ -158,7 +218,6 @@ final class StationMqttClient: CocoaMQTTDelegate {
 
     func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError err: Error?) {
         logger.error("Disconnected: \(err?.localizedDescription ?? "no error")")
-        SoundManager.shared.play(.mqttDisconnect)
     }
 
     func mqtt(_ mqtt: CocoaMQTT, didPublishMessage message: CocoaMQTTMessage, id: UInt16) {}
@@ -167,5 +226,85 @@ final class StationMqttClient: CocoaMQTTDelegate {
 
     func mqtt(_ mqtt: CocoaMQTT, didReceiveTrust trust: SecTrust, completionHandler: @escaping (Bool) -> Void) {
         completionHandler(true)
+    }
+}
+
+/// HTTP loopback used on the Simulator: the local Vite kiosk at :5176
+/// publishes `keyboard_focus` and receives remote keys. Production iPads
+/// keep using MQTT + KDE Connect and never hit this path.
+final class StationKioskLoopback {
+    private let baseURL: URL
+    private let stationId: String
+    private let onControl: ([String: Any]) -> Void
+    private var timer: Timer?
+    private var lastFocusJSON: String = ""
+
+    static func baseURL(from brokerUri: String) -> URL? {
+        guard let url = URL(string: brokerUri), let host = url.host else { return nil }
+        let loopback = host == "127.0.0.1" || host == "localhost" || host == "::1"
+        guard loopback else { return nil }
+        return URL(string: "http://127.0.0.1:5176")
+    }
+
+    init(baseURL: URL, stationId: String, onControl: @escaping ([String: Any]) -> Void) {
+        self.baseURL = baseURL
+        self.stationId = stationId
+        self.onControl = onControl
+    }
+
+    func start() {
+        stop()
+        poll()
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+            self?.poll()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func sendKey(_ key: String) {
+        post(["station": stationId, "key": key])
+    }
+
+    func sendSpecial(_ name: String) {
+        post(["station": stationId, "special": name])
+    }
+
+    func sendSlider(_ value: Double, seq: Int) {
+        post(["station": stationId, "slider": min(1, max(0, value)), "seq": seq])
+    }
+
+    private func poll() {
+        guard let url = URL(string: "\(baseURL.absoluteString)/__hons/keyboard-focus?station=\(stationId)") else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self, let data, let json = String(data: data, encoding: .utf8) else { return }
+            guard json != self.lastFocusJSON else { return }
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            self.lastFocusJSON = json
+            let envelope: [String: Any] = [
+                "event": "keyboard_focus",
+                "ts": Int64(Date().timeIntervalSince1970 * 1000),
+                "src": "loopback",
+                "data": obj,
+            ]
+            guard let control = StationMqttClient.keyboardFocusControl(from: envelope) else { return }
+            DispatchQueue.main.async {
+                self.onControl(control)
+            }
+        }.resume()
+    }
+
+    private func post(_ payload: [String: Any]) {
+        guard let url = URL(string: "\(baseURL.absoluteString)/__hons/remote-key") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        URLSession.shared.dataTask(with: request).resume()
     }
 }
