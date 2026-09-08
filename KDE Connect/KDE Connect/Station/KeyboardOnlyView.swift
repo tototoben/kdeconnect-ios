@@ -55,6 +55,10 @@ struct KeyboardOnlyView: View {
                     onYes: {
                         sendKeyPress("y", [])
                         focusMode = .standard
+                    },
+                    onSkip: {
+                        sendKeyPress("n", [])
+                        focusMode = .standard
                     }
                 )
             }
@@ -240,20 +244,30 @@ enum InputFocusMode {
 
 struct YesNoFocusView: View {
     let onYes: () -> Void
+    let onSkip: () -> Void
 
     var body: some View {
         GeometryReader { geo in
-            // Single full-screen confirm button -- this focus mode is only
-            // used for a plain "ready?" confirm, not a real yes/no choice.
-            let buttonWidth = geo.size.width - 40
+            // Two large buttons for the "ready?" confirm -- Yes starts the
+            // recording countdown, Skip declines it. Both choices are saved
+            // (see readyAnswer in ThirdStation.tsx / photobashTrigger.ts).
+            let buttonWidth = (geo.size.width - 60) / 2
             let buttonHeight = geo.size.height - 40
 
-            FocusButton(
-                title: "YES",
-                width: buttonWidth,
-                height: buttonHeight,
-                action: onYes
-            )
+            HStack(spacing: 20) {
+                FocusButton(
+                    title: "YES",
+                    width: buttonWidth,
+                    height: buttonHeight,
+                    action: onYes
+                )
+                FocusButton(
+                    title: "SKIP",
+                    width: buttonWidth,
+                    height: buttonHeight,
+                    action: onSkip
+                )
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -289,7 +303,7 @@ private struct FocusButton: View {
 
     private var label: some View {
         Text(title)
-            .font(.system(size: min(min(width, height) * 0.4, 96), weight: .medium))
+            .font(.system(size: min(min(width, height) * 0.35, 72), weight: .medium))
             .foregroundColor(.white)
             .frame(width: width, height: height)
     }
