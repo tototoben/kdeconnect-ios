@@ -556,17 +556,17 @@ private struct IceScaleSlider: View {
 
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(StationChrome.ice.opacity(0.10))
+                    .fill(StationChrome.ice.opacity(0.22))
                     .frame(height: trackH)
                     .overlay(StationIceGrain.overlay(opacity: 0.12))
                     .overlay(
                         Rectangle()
-                            .stroke(StationChrome.ice.opacity(0.28), lineWidth: 1)
+                            .stroke(StationChrome.ice.opacity(0.50), lineWidth: 1.5)
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
 
                 Rectangle()
-                    .fill(StationChrome.ice.opacity(0.42))
+                    .fill(StationChrome.ice.opacity(0.55))
                     .frame(width: max(x, trackH), height: trackH)
                     .overlay(StationIceGrain.overlay(opacity: 0.18))
                     .frame(maxHeight: .infinity, alignment: .center)
@@ -579,7 +579,7 @@ private struct IceScaleSlider: View {
                             .stroke(StationChrome.ice.opacity(0.95), lineWidth: 1)
                             .padding(1)
                     )
-                    .shadow(color: StationChrome.ice.opacity(0.55), radius: 14)
+                    .shadow(color: StationChrome.ice.opacity(0.65), radius: 18)
                     .frame(width: thumb, height: thumb)
                     .offset(x: x - thumb / 2)
             }
