@@ -194,6 +194,9 @@ final class StationMqttClient: CocoaMQTTDelegate {
                 control["prompt"] = trimmed
             }
         }
+        if let seq = data["seq"] ?? payload["seq"] {
+            control["seq"] = seq
+        }
         return control
     }
 
@@ -273,8 +276,15 @@ final class StationKioskLoopback {
         timer = nil
     }
 
-    func sendKey(_ key: String) {
-        post(["station": stationId, "key": key])
+    func sendKey(_ key: String, alt: Bool = false, shift: Bool = false) {
+        var payload: [String: Any] = ["station": stationId, "key": key]
+        if alt {
+            payload["alt"] = true
+        }
+        if shift {
+            payload["shift"] = true
+        }
+        post(payload)
     }
 
     func sendSpecial(_ name: String) {

@@ -28,6 +28,7 @@ struct KeyboardOnlyView: View {
     @State private var lastSentSlider: Double = -1
     @State private var sliderSeq: Int = 0
     @State private var focusPrompt: String = ""
+    @State private var focusEpoch: Int = 0
 
     /// True when Guided Access is active — all config/debug UI is hidden.
     private var isKiosk: Bool { isGuidedAccessActive }
@@ -103,9 +104,15 @@ struct KeyboardOnlyView: View {
                     )
                 }
             }
+            .id(focusEpoch)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             IceSubmitFlash(progress: flashProgress)
+
+            OperatorChordCorners(
+                onPicker: { sendKeyPress("p", [.alt, .shift]) },
+                onRestart: { sendKeyPress("r", [.alt, .shift]) }
+            )
 
             VStack {
                 HStack {
@@ -233,8 +240,12 @@ struct KeyboardOnlyView: View {
     // MARK: - Key sending
 
     private func sendKeyPress(_ keys: String, _ mods: [RemoteInput.KeyModifier]) {
-        kioskLink?.sendKey(keys)
         let modsToUse = mods.isEmpty ? modifiers : mods
+        kioskLink?.sendKey(
+            keys,
+            alt: modsToUse.contains(.alt),
+            shift: modsToUse.contains(.shift)
+        )
         guard let deviceId = targetDeviceId,
               let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
         else { return }
@@ -385,6 +396,7 @@ struct KeyboardOnlyView: View {
         let action = control["action"] as? String ?? ""
         let prompt = (control["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         DispatchQueue.main.async {
+            bumpFocusEpoch(from: control)
             switch action {
             case "yesNoFocused", "choiceFocused":
                 applyChoiceLabels(from: control, defaultsToYesNo: action == "yesNoFocused")
@@ -421,6 +433,22 @@ struct KeyboardOnlyView: View {
         }
     }
 
+    private func bumpFocusEpoch(from control: [String: Any]) {
+        if let seq = control["seq"] as? NSNumber {
+            focusEpoch = seq.intValue
+            return
+        }
+        if let seq = control["seq"] as? Int {
+            focusEpoch = seq
+            return
+        }
+        if let ts = control["ts"] as? NSNumber {
+            focusEpoch = ts.intValue
+            return
+        }
+        focusEpoch += 1
+    }
+
     // MARK: - Orientation
 
     private func forceLandscapeOrientation() {
@@ -451,6 +479,43 @@ enum InputFocusMode {
     case choice
     case scale
     case hidden
+}
+
+/// Invisible operator chords for when the letter keyboard is hidden
+/// (YES/NO, slider, numpad). Long-press top-left restarts the station;
+/// top-right opens the production picker. Same Alt+Shift+R / P the
+/// kiosk listens for from the letter keyboard.
+private struct OperatorChordCorners: View {
+    let onPicker: () -> Void
+    let onRestart: () -> Void
+
+    var body: some View {
+        VStack {
+            HStack {
+                OperatorChordHit(action: onRestart)
+                Spacer()
+                OperatorChordHit(action: onPicker)
+            }
+            Spacer()
+        }
+        .padding(.top, 2)
+        .padding(.horizontal, 2)
+        .allowsHitTesting(true)
+    }
+}
+
+private struct OperatorChordHit: View {
+    let action: () -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(width: 56, height: 56)
+            .contentShape(Rectangle())
+            .onLongPressGesture(minimumDuration: 0.9) {
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                action()
+            }
+    }
 }
 
 // MARK: - Split choice (yes/no and this-or-that)
