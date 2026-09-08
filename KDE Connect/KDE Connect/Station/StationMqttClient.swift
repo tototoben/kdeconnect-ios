@@ -188,6 +188,12 @@ final class StationMqttClient: CocoaMQTTDelegate {
         if let value = data["value"] ?? payload["value"] {
             control["value"] = value
         }
+        if let prompt = (data["prompt"] as? String) ?? (payload["prompt"] as? String) {
+            let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                control["prompt"] = trimmed
+            }
+        }
         return control
     }
 
@@ -285,7 +291,6 @@ final class StationKioskLoopback {
             guard let self, let data, let json = String(data: data, encoding: .utf8) else { return }
             guard json != self.lastFocusJSON else { return }
             guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-            self.lastFocusJSON = json
             let envelope: [String: Any] = [
                 "event": "keyboard_focus",
                 "ts": Int64(Date().timeIntervalSince1970 * 1000),
@@ -293,6 +298,7 @@ final class StationKioskLoopback {
                 "data": obj,
             ]
             guard let control = StationMqttClient.keyboardFocusControl(from: envelope) else { return }
+            self.lastFocusJSON = json
             DispatchQueue.main.async {
                 self.onControl(control)
             }

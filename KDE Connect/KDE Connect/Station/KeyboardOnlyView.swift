@@ -27,6 +27,7 @@ struct KeyboardOnlyView: View {
     @State private var sliderRight: String = "Extremely"
     @State private var lastSentSlider: Double = -1
     @State private var sliderSeq: Int = 0
+    @State private var focusPrompt: String = ""
 
     /// True when Guided Access is active — all config/debug UI is hidden.
     private var isKiosk: Bool { isGuidedAccessActive }
@@ -133,6 +134,16 @@ struct KeyboardOnlyView: View {
                 }
                 .padding(.top, 8)
                 .padding(.horizontal, 8)
+                if !focusPrompt.isEmpty && focusMode != .hidden {
+                    Text(focusPrompt.uppercased())
+                        .font(StationChrome.labelFont(size: 14))
+                        .foregroundColor(StationChrome.ice.opacity(0.82))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 4)
+                }
                 Spacer()
             }
             .allowsHitTesting(!isKiosk)
@@ -372,20 +383,25 @@ struct KeyboardOnlyView: View {
 
     private func handleControlMessage(_ control: [String: Any]) {
         let action = control["action"] as? String ?? ""
+        let prompt = (control["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         DispatchQueue.main.async {
             switch action {
             case "yesNoFocused", "choiceFocused":
                 applyChoiceLabels(from: control, defaultsToYesNo: action == "yesNoFocused")
                 focusMode = .choice
+                focusPrompt = prompt
                 hasTyped = false
             case "yesNoBlur", "textFocused":
                 focusMode = .standard
+                focusPrompt = prompt
                 hasTyped = false
             case "numericFocused":
                 focusMode = .numeric
+                focusPrompt = prompt
                 hasTyped = false
             case "numericBlur":
                 focusMode = .standard
+                focusPrompt = prompt
                 hasTyped = false
             case "scaleFocused":
                 applySliderLabels(from: control)
@@ -393,9 +409,11 @@ struct KeyboardOnlyView: View {
                 sliderValue = incoming ?? (focusMode == .scale ? sliderValue : 0.5)
                 lastSentSlider = sliderValue
                 focusMode = .scale
+                focusPrompt = prompt
                 hasTyped = true
             case "keyboardHidden":
                 focusMode = .hidden
+                focusPrompt = ""
                 hasTyped = false
             default:
                 break
