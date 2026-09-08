@@ -6,7 +6,7 @@
 
 import Foundation
 
-/// Multi-language keyboard layouts (3 letter rows, no number row).
+/// Multi-language keyboard layouts (shared number row + 3 letter rows).
 /// Based on simple-keyboard-layouts data, simplified to letter keys only.
 /// Each layout provides both `charRows` (default) and `shiftRows` (shift active)
 /// so that non-Latin scripts and umlauts work correctly with the shift key.
@@ -44,6 +44,9 @@ enum KeyboardLayout: String, CaseIterable, Codable {
         case .arabic:   return "AR"
         }
     }
+
+    /// Shared top row. Digits are not shifted so picker 1 / 2 / 3 and age stay digits.
+    static let numberRow = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
 
     /// Three rows of default (lowercase) letters, top to bottom.
     var charRows: [[String]] {

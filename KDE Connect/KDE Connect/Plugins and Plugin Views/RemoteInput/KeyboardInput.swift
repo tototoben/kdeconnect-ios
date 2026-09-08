@@ -216,7 +216,7 @@ struct StationKeyboardRootView: View {
             let leftW = max(innerW - gap - actionW, 1)
             let modifierH = min(max(innerH * 0.13, 52), 68)
             let keysH = max(innerH - modifierH - gap, 1)
-            let letterFont = min(keysH * 0.11, 34)
+            let letterFont = min(keysH * 0.09, 30)
             let modifierFont = min(modifierH * 0.28, 16)
             let actionIcon = min(actionW * 0.28, 28)
 
@@ -244,6 +244,17 @@ struct StationKeyboardRootView: View {
                     .frame(width: leftW, height: modifierH)
 
                     VStack(spacing: gap) {
+                        HStack(spacing: gap) {
+                            ForEach(KeyboardLayout.numberRow, id: \.self) { digit in
+                                KeyButton(title: digit, fontSize: letterFont) {
+                                    onKey(digit)
+                                    if shiftActive {
+                                        shiftActive = false
+                                        onModifierToggle(.shift, false)
+                                    }
+                                }
+                            }
+                        }
                         ForEach(charRows.indices, id: \.self) { rowIndex in
                             HStack(spacing: gap) {
                                 ForEach(charRows[rowIndex].indices, id: \.self) { colIndex in

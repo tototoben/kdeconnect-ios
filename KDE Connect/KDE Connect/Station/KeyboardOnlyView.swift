@@ -67,20 +67,6 @@ struct KeyboardOnlyView: View {
                         scale: 1.22,
                         submitArmed: hasTyped
                     )
-                } else if focusMode == .numeric {
-                    NumericPadFocusView(
-                        onDigit: { digit in
-                            markTyped()
-                            sendKeyPress(digit, [])
-                        },
-                        onDelete: {
-                            sendSpecialKeyPress(.backspace)
-                        },
-                        onReturn: {
-                            confirmEntry()
-                        },
-                        submitArmed: hasTyped
-                    )
                 } else if focusMode == .choice {
                     SplitChoiceView(
                         leftTitle: choiceLeft,
@@ -240,7 +226,12 @@ struct KeyboardOnlyView: View {
     // MARK: - Key sending
 
     private func sendKeyPress(_ keys: String, _ mods: [RemoteInput.KeyModifier]) {
-        let modsToUse = mods.isEmpty ? modifiers : mods
+        var modsToUse = mods.isEmpty ? modifiers : mods
+        // Number-row digits must stay 1–0 even if Alt/Shift is still latched
+        // from the picker chord (Shift+1 would otherwise become "!").
+        if keys.count == 1, keys.allSatisfy({ $0.isNumber }) {
+            modsToUse = []
+        }
         kioskLink?.sendKey(
             keys,
             alt: modsToUse.contains(.alt),
@@ -297,12 +288,6 @@ struct KeyboardOnlyView: View {
         sendSpecialKeyPress(.return)
         guard hasTyped else { return }
         hasTyped = false
-        // Age (and any other numeric prompt) should drop the numpad as soon as
-        // OK is pressed. The next keyboard_focus from the kiosk then selects
-        // letters, yes/no, or hidden — without waiting on MQTT to leave the pad.
-        if focusMode == .numeric {
-            focusMode = .standard
-        }
         triggerSubmitFlash()
     }
 
@@ -403,15 +388,7 @@ struct KeyboardOnlyView: View {
                 focusMode = .choice
                 focusPrompt = prompt
                 hasTyped = false
-            case "yesNoBlur", "textFocused":
-                focusMode = .standard
-                focusPrompt = prompt
-                hasTyped = false
-            case "numericFocused":
-                focusMode = .numeric
-                focusPrompt = prompt
-                hasTyped = false
-            case "numericBlur":
+            case "yesNoBlur", "textFocused", "numericFocused", "numericBlur":
                 focusMode = .standard
                 focusPrompt = prompt
                 hasTyped = false
@@ -475,14 +452,13 @@ struct KeyboardOnlyView: View {
 
 enum InputFocusMode {
     case standard
-    case numeric
     case choice
     case scale
     case hidden
 }
 
 /// Invisible operator chords for when the letter keyboard is hidden
-/// (YES/NO, slider, numpad). Long-press top-left restarts the station;
+/// (YES/NO, slider). Long-press top-left restarts the station;
 /// top-right opens the production picker. Same Alt+Shift+R / P the
 /// kiosk listens for from the letter keyboard.
 private struct OperatorChordCorners: View {
@@ -707,44 +683,6 @@ private struct SplitPane: View {
     }
 }
 
-struct NumericPadFocusView: View {
-    let onDigit: (String) -> Void
-    let onDelete: () -> Void
-    let onReturn: () -> Void
-    var submitArmed: Bool = false
-
-    private let rows = [
-        ["7", "8", "9"],
-        ["4", "5", "6"],
-        ["1", "2", "3"],
-    ]
-
-    var body: some View {
-        GeometryReader { geo in
-            let key = min(geo.size.width * 0.2, geo.size.height * 0.2)
-            VStack(spacing: 8) {
-                ForEach(rows, id: \.self) { row in
-                    HStack(spacing: 8) {
-                        ForEach(row, id: \.self) { digit in
-                            FocusButton(title: digit, width: key, height: key) {
-                                onDigit(digit)
-                            }
-                        }
-                    }
-                }
-                HStack(spacing: 8) {
-                    FocusButton(title: "DEL", width: key, height: key, action: onDelete)
-                    FocusButton(title: "0", width: key, height: key) {
-                        onDigit("0")
-                    }
-                    FocusButton(title: "OK", width: key, height: key, isAccent: true, isArmed: submitArmed, action: onReturn)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-}
-
 private struct FocusButton: View {
     let title: String
     let width: CGFloat
@@ -950,12 +888,6 @@ struct KeyboardOnlyView_Previews: PreviewProvider {
                 .previewInterfaceOrientation(.landscapeLeft)
                 .previewDevice("iPad (9th generation)")
                 .previewDisplayName("Keyboard kiosk")
-
-            NumericPadFocusView(onDigit: { _ in }, onDelete: {}, onReturn: {})
-                .background(Color.black)
-                .previewInterfaceOrientation(.landscapeLeft)
-                .previewDevice("iPad (9th generation)")
-                .previewDisplayName("Age numpad")
 
             SplitChoiceView(leftTitle: "YES", rightTitle: "NO", onLeft: {}, onRight: {})
                 .background(Color.black)

@@ -159,14 +159,14 @@ final class StationMqttClient: CocoaMQTTDelegate {
     }
 
     /// Maps a kiosk `keyboard_focus` event onto the same control actions the
-    /// remote already understands (numpad / yes-no / letters / hidden).
+    /// remote already understands (letters / yes-no / slider / hidden).
     static func keyboardFocusControl(from payload: [String: Any]) -> [String: Any]? {
         guard (payload["event"] as? String) == "keyboard_focus" else { return nil }
         let data = dictionary(payload["data"]) ?? [:]
         let mode = (data["mode"] as? String) ?? (payload["mode"] as? String) ?? ""
         let action: String
         switch mode {
-        case "numeric": action = "numericFocused"
+        case "numeric": action = "textFocused" // number row lives on the letter keyboard
         case "yesno": action = "yesNoFocused"
         case "choice": action = "choiceFocused"
         case "scale": action = "scaleFocused"
