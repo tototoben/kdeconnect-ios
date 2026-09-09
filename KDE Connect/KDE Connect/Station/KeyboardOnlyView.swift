@@ -50,6 +50,7 @@ struct KeyboardOnlyView: View {
     @State private var sliderSeq: Int = 0
     @State private var focusPrompt: String = ""
     @State private var focusEpoch: Int = 0
+    @State private var focusSignature: String = ""
     @State private var lastLocalSliderAt: Date?
     @State private var mqttLog: [String] = []
     @State private var lastMqttControl: String = ""
@@ -482,8 +483,9 @@ struct KeyboardOnlyView: View {
         let prompt = StationPrompt.normalized(
             (control["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         )
+        let signature = Self.focusSignature(action: action, prompt: prompt, control: control)
         DispatchQueue.main.async {
-            bumpFocusEpoch(from: control)
+            bumpFocusEpoch(from: control, signature: signature)
             switch action {
             case "yesNoFocused", "choiceFocused":
                 applyChoiceLabels(from: control, defaultsToYesNo: action == "yesNoFocused")
@@ -522,7 +524,33 @@ struct KeyboardOnlyView: View {
         }
     }
 
-    private func bumpFocusEpoch(from control: [String: Any]) {
+    /// What the remote actually displays for a focus message. The kiosk
+    /// republishes the current focus on a timer with only `seq` moving, so the
+    /// signature deliberately ignores `seq`/`ts` -- and `value`, which the
+    /// kiosk streams while a slider moves.
+    private static func focusSignature(
+        action: String,
+        prompt: String,
+        control: [String: Any]
+    ) -> String {
+        let left = (control["left"] as? String) ?? ""
+        let right = (control["right"] as? String) ?? ""
+        return [action, left, right, prompt].joined(separator: "\u{1}")
+    }
+
+    /// Rebuild the focus view only when the displayed state changes.
+    ///
+    /// `focusEpoch` is the SwiftUI `.id()` of the whole focus view, so any
+    /// change tears the view down and builds a fresh one. It used to track the
+    /// kiosk's `seq`, which moves on every heartbeat republish (750 ms on the
+    /// Station III build) -- the Yes/No buttons visibly flashed and a tap that
+    /// spanned a rebuild was swallowed. Repeats of the same displayed state
+    /// leave the epoch alone; a genuinely new question changes the signature.
+    /// Two identical questions back to back therefore do not force a rebuild,
+    /// which is fine: the switch below resets the per-question state anyway.
+    private func bumpFocusEpoch(from control: [String: Any], signature: String) {
+        guard signature != focusSignature else { return }
+        focusSignature = signature
         if let seq = control["seq"] as? NSNumber {
             focusEpoch = seq.intValue
             return
