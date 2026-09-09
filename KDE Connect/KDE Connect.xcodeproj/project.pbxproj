@@ -708,7 +708,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				D2AB56782988E4B9008A2217 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				5E1BB96C2D1B92AC0024F3FF /* Mac */,
@@ -803,7 +802,6 @@
 				D2FBA1F6277178A000EBA686 /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */,
 				D2FAF12527D2E78900658753 /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */,
 				D21A100629B878B800CE02F8 /* XCRemoteSwiftPackageReference "swift-collections" */,
-				D2D7AB82298C8EA600AB490B /* XCRemoteSwiftPackageReference "SwiftLint" */,
 				STA000022680000300CC21DD /* XCRemoteSwiftPackageReference "CocoaMQTT" */,
 			);
 			productRefGroup = A0A0442D267BF38700CC21DD /* Products */;

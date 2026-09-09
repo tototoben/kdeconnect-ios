@@ -463,6 +463,26 @@ final class MqttCoordinator: StationMqttListener, StationCameraListener {
         client?.publishEvent(event)
     }
 
+    func publishRemoteSlider(value: Double, seq: Int, confirm: Bool = false) {
+        onLog?("-> slider \(value) seq=\(seq) confirm=\(confirm)")
+        client?.publishRemoteSlider(value: value, seq: seq, confirm: confirm)
+    }
+
+    func publishRemoteOperator(_ action: String) {
+        onLog?("-> operator \(action)")
+        client?.publishRemoteOperator(action)
+    }
+
+    func publishRemoteKey(
+        key: String? = nil,
+        special: String? = nil,
+        alt: Bool = false,
+        shift: Bool = false
+    ) {
+        onLog?("-> key \(key ?? special ?? "?")")
+        client?.publishRemoteKey(key: key, special: special, alt: alt, shift: shift)
+    }
+
     func onControlMessage(_ control: [String: Any]) {
         if let data = try? JSONSerialization.data(withJSONObject: control),
            let json = String(data: data, encoding: .utf8) {

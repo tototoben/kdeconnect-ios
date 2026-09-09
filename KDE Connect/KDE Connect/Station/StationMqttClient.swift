@@ -118,6 +118,75 @@ final class StationMqttClient: CocoaMQTTDelegate {
         mqtt.publish(eventTopic, withString: json, qos: Self.qos, retained: false)
     }
 
+    func publishRemoteSlider(value: Double, seq: Int, confirm: Bool = false) {
+        guard let mqtt = mqtt else {
+            logger.error("Cannot publish slider: mqtt is nil")
+            return
+        }
+        let payload: [String: Any] = [
+            "ts": Int64(Date().timeIntervalSince1970 * 1000),
+            "src": StationMqttClient.source,
+            "event": "remote_slider",
+            "data": [
+                "value": min(1, max(0, value)),
+                "seq": seq,
+                "confirm": confirm,
+            ],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        logger.info("Publishing slider to \(self.eventTopic): \(json)")
+        mqtt.publish(eventTopic, withString: json, qos: Self.qos, retained: false)
+    }
+
+    func publishRemoteOperator(_ action: String) {
+        guard let mqtt = mqtt else {
+            logger.error("Cannot publish operator: mqtt is nil")
+            return
+        }
+        let payload: [String: Any] = [
+            "ts": Int64(Date().timeIntervalSince1970 * 1000),
+            "src": StationMqttClient.source,
+            "event": "operator_\(action)",
+            "data": [:],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        logger.info("Publishing operator to \(self.eventTopic): \(json)")
+        mqtt.publish(eventTopic, withString: json, qos: Self.qos, retained: false)
+    }
+
+    func publishRemoteKey(
+        key: String? = nil,
+        special: String? = nil,
+        alt: Bool = false,
+        shift: Bool = false
+    ) {
+        guard let mqtt = mqtt else {
+            logger.error("Cannot publish remote key: mqtt is nil")
+            return
+        }
+        var data: [String: Any] = [:]
+        if let key, !key.isEmpty {
+            data["key"] = key
+        }
+        if let special, !special.isEmpty {
+            data["special"] = special
+        }
+        if alt { data["alt"] = true }
+        if shift { data["shift"] = true }
+        let payload: [String: Any] = [
+            "ts": Int64(Date().timeIntervalSince1970 * 1000),
+            "src": StationMqttClient.source,
+            "event": "remote_key",
+            "data": data,
+        ]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: encoded, encoding: .utf8) else { return }
+        logger.info("Publishing remote key to \(self.eventTopic): \(json)")
+        mqtt.publish(eventTopic, withString: json, qos: Self.qos, retained: false)
+    }
+
     // MARK: - CocoaMQTTDelegate
 
     func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {

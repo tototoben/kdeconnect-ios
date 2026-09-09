@@ -229,7 +229,9 @@ class KdeConnectSettings: NSObject, ObservableObject {
         #if targetEnvironment(simulator)
         let defaultBroker = "tcp://127.0.0.1:1883"
         #else
-        let defaultBroker = "tcp://192.168.88.191:1883"
+        // LAN IP of the Mac Studio broker — reliable on exhibit Wi-Fi; avoid
+        // stale docs pointing at 192.168.88.198 or Tailscale-only hostnames.
+        let defaultBroker = "tcp://192.168.88.2:1883"
         #endif
         UserDefaults.standard.register(defaults: [
             "savePhotosToPhotosLibrary": !DeviceType.isMac,

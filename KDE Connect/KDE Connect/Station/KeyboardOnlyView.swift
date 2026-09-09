@@ -7,6 +7,27 @@
 import SwiftUI
 import UIKit
 
+enum ScaleRatingMapping {
+    static func value(for rating: Int) -> Double {
+        let clamped = min(10, max(1, rating))
+        return Double(clamped - 1) / 9.0
+    }
+
+    static func rating(for value: Double) -> Int {
+        guard value.isFinite else { return 1 }
+        let clamped = min(1.0, max(0.0, value))
+        return min(10, max(1, Int((clamped * 9.0).rounded()) + 1))
+    }
+}
+
+enum StationPrompt {
+    static func normalized(_ prompt: String) -> String {
+        prompt.caseInsensitiveCompare("waiting for your turn") == .orderedSame
+            ? "WAITING FOR PREVIOUS STATION INPUT"
+            : prompt
+    }
+}
+
 struct KeyboardOnlyView: View {
     @ObservedObject private var settings = KdeConnectSettings.shared
     @ObservedObject private var devicesViewModel = connectedDevicesViewModel
@@ -29,6 +50,9 @@ struct KeyboardOnlyView: View {
     @State private var sliderSeq: Int = 0
     @State private var focusPrompt: String = ""
     @State private var focusEpoch: Int = 0
+    @State private var lastLocalSliderAt: Date?
+    @State private var mqttLog: [String] = []
+    @State private var lastMqttControl: String = ""
 
     /// True when Guided Access is active — all config/debug UI is hidden.
     private var isKiosk: Bool { isGuidedAccessActive }
@@ -65,7 +89,38 @@ struct KeyboardOnlyView: View {
                             }
                         },
                         scale: 1.22,
-                        submitArmed: hasTyped
+                        submitArmed: hasTyped,
+                        showNumberRow: false
+                    )
+                } else if focusMode == .numeric {
+                    StationKeyboardRootView(
+                        onKey: { key in
+                            markTyped()
+                            sendKeyPress(key, [])
+                        },
+                        onDelete: {
+                            sendSpecialKeyPress(.backspace)
+                        },
+                        onReturn: {
+                            confirmEntry()
+                        },
+                        onSpace: {
+                            markTyped()
+                            sendKeyPress(" ", [])
+                        },
+                        onTab: {
+                            sendSpecialKeyPress(.tab)
+                        },
+                        onModifierToggle: { modifier, isOn in
+                            if isOn {
+                                modifiers.append(modifier)
+                            } else {
+                                modifiers.removeAll { $0 == modifier }
+                            }
+                        },
+                        scale: 1.22,
+                        submitArmed: hasTyped,
+                        showNumberRow: true
                     )
                 } else if focusMode == .choice {
                     SplitChoiceView(
@@ -96,8 +151,14 @@ struct KeyboardOnlyView: View {
             IceSubmitFlash(progress: flashProgress)
 
             OperatorChordCorners(
-                onPicker: { sendKeyPress("p", [.alt, .shift]) },
-                onRestart: { sendKeyPress("r", [.alt, .shift]) }
+                onPicker: {
+                    mqttCoordinator?.publishRemoteOperator("picker")
+                    sendKeyPress("p", [.alt, .shift])
+                },
+                onRestart: {
+                    mqttCoordinator?.publishRemoteOperator("restart")
+                    sendKeyPress("r", [.alt, .shift])
+                }
             )
 
             VStack {
@@ -136,6 +197,14 @@ struct KeyboardOnlyView: View {
                         .minimumScaleFactor(0.7)
                         .padding(.horizontal, 24)
                         .padding(.top, 4)
+                }
+                if settings.stationMqttDebug && !lastMqttControl.isEmpty {
+                    Text(lastMqttControl)
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundColor(.green.opacity(0.75))
+                        .lineLimit(2)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 2)
                 }
                 Spacer()
             }
@@ -237,6 +306,11 @@ struct KeyboardOnlyView: View {
             alt: modsToUse.contains(.alt),
             shift: modsToUse.contains(.shift)
         )
+        mqttCoordinator?.publishRemoteKey(
+            key: keys,
+            alt: modsToUse.contains(.alt),
+            shift: modsToUse.contains(.shift)
+        )
         guard let deviceId = targetDeviceId,
               let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
         else { return }
@@ -245,11 +319,21 @@ struct KeyboardOnlyView: View {
     }
 
     private func sendSpecialKeyPress(_ key: RemoteInput.SpecialKey) {
+        let special: String?
+        switch key {
+        case .return: special = "return"
+        case .backspace: special = "backspace"
+        case .tab: special = "tab"
+        default: special = nil
+        }
         switch key {
         case .return: kioskLink?.sendSpecial("return")
         case .backspace: kioskLink?.sendSpecial("backspace")
         case .tab: kioskLink?.sendSpecial("tab")
         default: break
+        }
+        if let special {
+            mqttCoordinator?.publishRemoteKey(special: special)
         }
         guard let deviceId = targetDeviceId,
               let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
@@ -264,13 +348,17 @@ struct KeyboardOnlyView: View {
         guard abs(clamped - lastSentSlider) >= 0.008 || lastSentSlider < 0 else { return }
         lastSentSlider = clamped
         sliderSeq += 1
+        lastLocalSliderAt = Date()
         kioskLink?.sendSlider(clamped, seq: sliderSeq)
+        mqttCoordinator?.publishRemoteSlider(value: clamped, seq: sliderSeq)
     }
 
     private func confirmSlider() {
         lastSentSlider = sliderValue
         sliderSeq += 1
+        lastLocalSliderAt = Date()
         kioskLink?.sendSlider(sliderValue, seq: sliderSeq)
+        mqttCoordinator?.publishRemoteSlider(value: sliderValue, seq: sliderSeq, confirm: true)
         if kioskLink != nil {
             kioskLink?.sendSpecial("confirm")
         } else if let deviceId = targetDeviceId,
@@ -316,6 +404,18 @@ struct KeyboardOnlyView: View {
             stationId: settings.stationId,
             onControl: { control in
                 handleControlMessage(control)
+            },
+            onLog: { line in
+                guard settings.stationMqttDebug else { return }
+                DispatchQueue.main.async {
+                    if line.hasPrefix("<-") {
+                        lastMqttControl = line
+                    }
+                    mqttLog.append(line)
+                    if mqttLog.count > 40 {
+                        mqttLog.removeFirst(mqttLog.count - 40)
+                    }
+                }
             }
         )
         mqttCoordinator = coordinator
@@ -379,7 +479,9 @@ struct KeyboardOnlyView: View {
 
     private func handleControlMessage(_ control: [String: Any]) {
         let action = control["action"] as? String ?? ""
-        let prompt = (control["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let prompt = StationPrompt.normalized(
+            (control["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
         DispatchQueue.main.async {
             bumpFocusEpoch(from: control)
             switch action {
@@ -388,15 +490,25 @@ struct KeyboardOnlyView: View {
                 focusMode = .choice
                 focusPrompt = prompt
                 hasTyped = false
-            case "yesNoBlur", "textFocused", "numericFocused", "numericBlur":
+            case "yesNoBlur", "textFocused", "numericBlur":
                 focusMode = .standard
+                focusPrompt = prompt
+                hasTyped = false
+            case "numericFocused":
+                focusMode = .numeric
                 focusPrompt = prompt
                 hasTyped = false
             case "scaleFocused":
                 applySliderLabels(from: control)
-                let incoming = incomingSliderValue(from: control)
-                sliderValue = incoming ?? (focusMode == .scale ? sliderValue : 0.5)
-                lastSentSlider = sliderValue
+                let entering = focusMode != .scale
+                let recentlySent = lastLocalSliderAt.map { Date().timeIntervalSince($0) < 0.8 } ?? false
+                if let incoming = incomingSliderValue(from: control), entering || !recentlySent {
+                    sliderValue = incoming
+                    lastSentSlider = sliderValue
+                } else if entering {
+                    sliderValue = 0.5
+                    lastSentSlider = sliderValue
+                }
                 focusMode = .scale
                 focusPrompt = prompt
                 hasTyped = true
@@ -452,6 +564,7 @@ struct KeyboardOnlyView: View {
 
 enum InputFocusMode {
     case standard
+    case numeric
     case choice
     case scale
     case hidden
@@ -523,8 +636,8 @@ struct ScaleSliderFocusView: View {
                         kerning: 2.4
                     )
                 }
-                IceScaleSlider(value: $value, onChange: onChange)
-                    .frame(height: min(96, geo.size.height * 0.28))
+                ScaleRatingRow(value: $value, onChange: onChange)
+                    .frame(height: min(112, geo.size.height * 0.34))
                 FocusButton(
                     title: "CONFIRM",
                     width: innerW,
@@ -543,58 +656,31 @@ struct ScaleSliderFocusView: View {
     }
 }
 
-private struct IceScaleSlider: View {
+private struct ScaleRatingRow: View {
     @Binding var value: Double
     let onChange: (Double) -> Void
 
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 10)
+
     var body: some View {
         GeometryReader { geo in
-            let thumb: CGFloat = min(84, max(64, geo.size.height))
-            let trackH: CGFloat = min(56, thumb * 0.62)
-            let usable = max(geo.size.width - thumb, 1)
-            let x = thumb / 2 + CGFloat(value) * usable
-
-            ZStack(alignment: .leading) {
-                Rectangle()
-                    .fill(StationChrome.ice.opacity(0.22))
-                    .frame(height: trackH)
-                    .overlay(StationIceGrain.overlay(opacity: 0.12))
-                    .overlay(
-                        Rectangle()
-                            .stroke(StationChrome.ice.opacity(0.50), lineWidth: 1.5)
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-
-                Rectangle()
-                    .fill(StationChrome.ice.opacity(0.55))
-                    .frame(width: max(x, trackH), height: trackH)
-                    .overlay(StationIceGrain.overlay(opacity: 0.18))
-                    .frame(maxHeight: .infinity, alignment: .center)
-
-                Rectangle()
-                    .fill(StationChrome.ice)
-                    .overlay(StationIceGrain.overlay(opacity: 0.28))
-                    .overlay(
-                        Rectangle()
-                            .stroke(StationChrome.ice.opacity(0.95), lineWidth: 1)
-                            .padding(1)
-                    )
-                    .shadow(color: StationChrome.ice.opacity(0.65), radius: 18)
-                    .frame(width: thumb, height: thumb)
-                    .offset(x: x - thumb / 2)
-            }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { drag in
-                        let next = min(1, max(0, Double((drag.location.x - thumb / 2) / usable)))
-                        if abs(next - value) >= 0.002 {
-                            value = next
-                            onChange(next)
-                        }
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(1...10, id: \.self) { rating in
+                    FocusButton(
+                        title: "\(rating)",
+                        width: max((geo.size.width - 72) / 10, 1),
+                        height: min(82, geo.size.height),
+                        isAccent: true,
+                        isArmed: ScaleRatingMapping.rating(for: value) == rating
+                    ) {
+                        let next = ScaleRatingMapping.value(for: rating)
+                        value = next
+                        onChange(next)
                     }
-            )
+                }
+            }
         }
+        .padding(.horizontal, 4)
     }
 }
 

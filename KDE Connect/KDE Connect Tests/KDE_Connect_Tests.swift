@@ -31,6 +31,41 @@ class KDE_Connect_Tests: XCTestCase {
         // Use XCTAssert and related functions to verify your tests produce the correct results.
     }
 
+    func testScaleRatingMappingUsesNormalizedEndpoints() {
+        XCTAssertEqual(ScaleRatingMapping.value(for: 1), 0.0, accuracy: 0.0001)
+        XCTAssertEqual(ScaleRatingMapping.value(for: 10), 1.0, accuracy: 0.0001)
+    }
+
+    func testScaleRatingMappingRoundsToNearestRating() {
+        XCTAssertEqual(ScaleRatingMapping.rating(for: 0.0), 1)
+        XCTAssertEqual(ScaleRatingMapping.rating(for: 0.51), 6)
+        XCTAssertEqual(ScaleRatingMapping.rating(for: 1.0), 10)
+    }
+
+    func testScaleRatingMappingHasTenSelectableRatings() {
+        let values = (1...10).map { ScaleRatingMapping.value(for: $0) }
+        let expected = [
+            0.0, 1.0 / 9.0, 2.0 / 9.0, 3.0 / 9.0, 4.0 / 9.0,
+            5.0 / 9.0, 6.0 / 9.0, 7.0 / 9.0, 8.0 / 9.0, 1.0,
+        ]
+
+        XCTAssertEqual(values.count, expected.count)
+        for (actual, expected) in zip(values, expected) {
+            XCTAssertEqual(actual, expected, accuracy: 0.0001)
+        }
+    }
+
+    func testWaitingPromptUsesPreviousStationCopy() {
+        XCTAssertEqual(
+            StationPrompt.normalized("Waiting for your turn"),
+            "WAITING FOR PREVIOUS STATION INPUT"
+        )
+        XCTAssertEqual(
+            StationPrompt.normalized("What is your name?"),
+            "What is your name?"
+        )
+    }
+
     func testPerformanceExample() throws {
         // This is an example of a performance test case.
         self.measure {

@@ -197,6 +197,7 @@ struct StationKeyboardRootView: View {
     let onModifierToggle: (RemoteInput.KeyModifier, Bool) -> Void
     var scale: CGFloat = 1.0
     var submitArmed: Bool = false
+    var showNumberRow: Bool = true
 
     @ObservedObject private var settings = KdeConnectSettings.shared
 
@@ -244,13 +245,15 @@ struct StationKeyboardRootView: View {
                     .frame(width: leftW, height: modifierH)
 
                     VStack(spacing: gap) {
-                        HStack(spacing: gap) {
-                            ForEach(KeyboardLayout.numberRow, id: \.self) { digit in
-                                KeyButton(title: digit, fontSize: letterFont) {
-                                    onKey(digit)
-                                    if shiftActive {
-                                        shiftActive = false
-                                        onModifierToggle(.shift, false)
+                        if showNumberRow {
+                            HStack(spacing: gap) {
+                                ForEach(KeyboardLayout.numberRow, id: \.self) { digit in
+                                    KeyButton(title: digit, fontSize: letterFont) {
+                                        onKey(digit)
+                                        if shiftActive {
+                                            shiftActive = false
+                                            onModifierToggle(.shift, false)
+                                        }
                                     }
                                 }
                             }
