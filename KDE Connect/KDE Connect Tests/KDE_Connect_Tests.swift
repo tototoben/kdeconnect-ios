@@ -66,6 +66,44 @@ class KDE_Connect_Tests: XCTestCase {
         )
     }
 
+    func testFocusControlGateSuppressesControlAndEventDuplicates() {
+        var gate = StationFocusControlGate()
+        let control: [String: Any] = [
+            "ts": 100,
+            "src": "station",
+            "action": "yesNoFocused",
+            "left": "YES",
+            "right": "NO",
+            "prompt": "Ready?",
+            "seq": 4,
+        ]
+        var duplicate = control
+        duplicate["ts"] = 101
+
+        XCTAssertTrue(gate.accept(control))
+        XCTAssertFalse(gate.accept(duplicate))
+    }
+
+    func testFocusControlGateDropsOlderOutOfOrderControl() {
+        var gate = StationFocusControlGate()
+        XCTAssertTrue(gate.accept([
+            "ts": 200,
+            "action": "yesNoFocused",
+            "left": "YES",
+            "right": "NO",
+        ]))
+        XCTAssertFalse(gate.accept([
+            "ts": 199,
+            "action": "textFocused",
+        ]))
+    }
+
+    func testFocusControlGateAllowsARealLayoutChange() {
+        var gate = StationFocusControlGate()
+        XCTAssertTrue(gate.accept(["ts": 200, "action": "yesNoFocused", "left": "YES", "right": "NO"]))
+        XCTAssertTrue(gate.accept(["ts": 201, "action": "choiceFocused", "left": "LOVE", "right": "SEX"]))
+    }
+
     func testPerformanceExample() throws {
         // This is an example of a performance test case.
         self.measure {

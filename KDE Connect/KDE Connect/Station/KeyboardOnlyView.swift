@@ -7,6 +7,11 @@
 import SwiftUI
 import UIKit
 
+enum ChoiceSide {
+    case left
+    case right
+}
+
 enum ScaleRatingMapping {
     static func value(for rating: Int) -> Double {
         let clamped = min(10, max(1, rating))
@@ -31,6 +36,7 @@ enum StationPrompt {
 struct KeyboardOnlyView: View {
     @ObservedObject private var settings = KdeConnectSettings.shared
     @ObservedObject private var devicesViewModel = connectedDevicesViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var showingSettings: Bool = false
     @State private var modifiers: [RemoteInput.KeyModifier] = []
@@ -43,6 +49,8 @@ struct KeyboardOnlyView: View {
     @State private var iceBreath: Bool = false
     @State private var choiceLeft: String = "YES"
     @State private var choiceRight: String = "NO"
+    @State private var choiceFlashSide: ChoiceSide?
+    @State private var choiceFlashToken: Int = 0
     @State private var sliderValue: Double = 0.5
     @State private var sliderLeft: String = "Not very"
     @State private var sliderRight: String = "Extremely"
@@ -50,7 +58,7 @@ struct KeyboardOnlyView: View {
     @State private var sliderSeq: Int = 0
     @State private var focusPrompt: String = ""
     @State private var focusEpoch: Int = 0
-    @State private var focusSignature: String = ""
+    @State private var focusGate = StationFocusControlGate()
     @State private var lastLocalSliderAt: Date?
     @State private var mqttLog: [String] = []
     @State private var lastMqttControl: String = ""
@@ -127,13 +135,14 @@ struct KeyboardOnlyView: View {
                     SplitChoiceView(
                         leftTitle: choiceLeft,
                         rightTitle: choiceRight,
+                        flashingSide: choiceFlashSide,
                         onLeft: {
                             sendKeyPress("y", [])
-                            triggerSubmitFlash()
+                            triggerChoiceFlash(.left)
                         },
                         onRight: {
                             sendKeyPress("n", [])
-                            triggerSubmitFlash()
+                            triggerChoiceFlash(.right)
                         }
                     )
                 } else if focusMode == .scale {
@@ -154,11 +163,9 @@ struct KeyboardOnlyView: View {
             OperatorChordCorners(
                 onPicker: {
                     mqttCoordinator?.publishRemoteOperator("picker")
-                    sendKeyPress("p", [.alt, .shift])
                 },
                 onRestart: {
                     mqttCoordinator?.publishRemoteOperator("restart")
-                    sendKeyPress("r", [.alt, .shift])
                 }
             )
 
@@ -259,12 +266,21 @@ struct KeyboardOnlyView: View {
         .onChange(of: settings.stationBrokerUri) { _ in
             connectMqtt()
         }
+        .onChange(of: scenePhase) { phase in
+            switch phase {
+            case .active:
+                connectMqtt()
+            case .background:
+                disconnectMqtt()
+            case .inactive:
+                break
+            @unknown default:
+                break
+            }
+        }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
-            mqttCoordinator?.disconnect()
-            mqttCoordinator = nil
-            kioskLink?.stop()
-            kioskLink = nil
+            disconnectMqtt()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.guidedAccessStatusDidChangeNotification)) { _ in
             isGuidedAccessActive = UIAccessibility.isGuidedAccessEnabled
@@ -302,20 +318,23 @@ struct KeyboardOnlyView: View {
         if keys.count == 1, keys.allSatisfy({ $0.isNumber }) {
             modsToUse = []
         }
-        kioskLink?.sendKey(
-            keys,
-            alt: modsToUse.contains(.alt),
-            shift: modsToUse.contains(.shift)
-        )
-        mqttCoordinator?.publishRemoteKey(
-            key: keys,
-            alt: modsToUse.contains(.alt),
-            shift: modsToUse.contains(.shift)
-        )
-        guard let deviceId = targetDeviceId,
-              let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
-        else { return }
-        remoteInput.sendKeyPress(keys, modsToUse)
+        if let kioskLink {
+            kioskLink.sendKey(
+                keys,
+                alt: modsToUse.contains(.alt),
+                shift: modsToUse.contains(.shift)
+            )
+        } else {
+            // MQTT is the canonical station keyboard path. Sending the same
+            // tap through both MQTT/uinput and KDE Connect can produce two
+            // submissions whenever the flaky Wayland keyboard path happens to
+            // be alive.
+            mqttCoordinator?.publishRemoteKey(
+                key: keys,
+                alt: modsToUse.contains(.alt),
+                shift: modsToUse.contains(.shift)
+            )
+        }
         modifiers.removeAll()
     }
 
@@ -327,19 +346,16 @@ struct KeyboardOnlyView: View {
         case .tab: special = "tab"
         default: special = nil
         }
-        switch key {
-        case .return: kioskLink?.sendSpecial("return")
-        case .backspace: kioskLink?.sendSpecial("backspace")
-        case .tab: kioskLink?.sendSpecial("tab")
-        default: break
-        }
-        if let special {
+        if let kioskLink {
+            switch key {
+            case .return: kioskLink.sendSpecial("return")
+            case .backspace: kioskLink.sendSpecial("backspace")
+            case .tab: kioskLink.sendSpecial("tab")
+            default: break
+            }
+        } else if let special {
             mqttCoordinator?.publishRemoteKey(special: special)
         }
-        guard let deviceId = targetDeviceId,
-              let remoteInput = backgroundService._devices[deviceId]?._plugins[.mousePadRequest] as? RemoteInput
-        else { return }
-        remoteInput.sendSpecialKeyPress(key)
         modifiers.removeAll()
     }
 
@@ -393,6 +409,21 @@ struct KeyboardOnlyView: View {
         }
     }
 
+    private func triggerChoiceFlash(_ side: ChoiceSide) {
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        choiceFlashToken += 1
+        let token = choiceFlashToken
+        withAnimation(.easeOut(duration: 0.06)) {
+            choiceFlashSide = side
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            guard choiceFlashToken == token else { return }
+            withAnimation(.easeOut(duration: 0.16)) {
+                choiceFlashSide = nil
+            }
+        }
+    }
+
     // MARK: - MQTT
 
     private func connectMqtt() {
@@ -400,6 +431,7 @@ struct KeyboardOnlyView: View {
         mqttCoordinator = nil
         kioskLink?.stop()
         kioskLink = nil
+        focusGate = StationFocusControlGate()
         let coordinator = MqttCoordinator(
             brokerUri: settings.stationBrokerUri,
             stationId: settings.stationId,
@@ -432,6 +464,13 @@ struct KeyboardOnlyView: View {
             kioskLink = link
             link.start()
         }
+    }
+
+    private func disconnectMqtt() {
+        mqttCoordinator?.disconnect()
+        mqttCoordinator = nil
+        kioskLink?.stop()
+        kioskLink = nil
     }
 
     private func applyChoiceLabels(from control: [String: Any], defaultsToYesNo: Bool) {
@@ -485,7 +524,16 @@ struct KeyboardOnlyView: View {
         )
         let signature = Self.focusSignature(action: action, prompt: prompt, control: control)
         DispatchQueue.main.async {
-            bumpFocusEpoch(from: control, signature: signature)
+            let changed = focusGate.accept(control)
+            // The bridge delivers the same focus through retained ui/control
+            // and ui/event. Re-applying a duplicate used to clear typed state
+            // during a tap and made the two choice panes appear to flash.
+            // Slider values are the one exception: they may change while the
+            // displayed layout remains the same.
+            if !changed && action != "scaleFocused" { return }
+            if changed {
+                bumpFocusEpoch(from: control, signature: signature)
+            }
             switch action {
             case "yesNoFocused", "choiceFocused":
                 applyChoiceLabels(from: control, defaultsToYesNo: action == "yesNoFocused")
@@ -549,20 +597,8 @@ struct KeyboardOnlyView: View {
     /// Two identical questions back to back therefore do not force a rebuild,
     /// which is fine: the switch below resets the per-question state anyway.
     private func bumpFocusEpoch(from control: [String: Any], signature: String) {
-        guard signature != focusSignature else { return }
-        focusSignature = signature
-        if let seq = control["seq"] as? NSNumber {
-            focusEpoch = seq.intValue
-            return
-        }
-        if let seq = control["seq"] as? Int {
-            focusEpoch = seq
-            return
-        }
-        if let ts = control["ts"] as? NSNumber {
-            focusEpoch = ts.intValue
-            return
-        }
+        _ = control
+        _ = signature
         focusEpoch += 1
     }
 
@@ -715,17 +751,18 @@ private struct ScaleRatingRow: View {
 struct SplitChoiceView: View {
     let leftTitle: String
     let rightTitle: String
+    var flashingSide: ChoiceSide? = nil
     let onLeft: () -> Void
     let onRight: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            SplitPane(title: leftTitle, action: onLeft)
+            SplitPane(title: leftTitle, isFlashing: flashingSide == .left, action: onLeft)
             Rectangle()
                 .fill(StationChrome.ice.opacity(0.55))
                 .frame(width: 1)
                 .shadow(color: StationChrome.ice.opacity(0.45), radius: 6)
-            SplitPane(title: rightTitle, action: onRight)
+            SplitPane(title: rightTitle, isFlashing: flashingSide == .right, action: onRight)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
@@ -734,6 +771,7 @@ struct SplitChoiceView: View {
 
 private struct SplitPane: View {
     let title: String
+    let isFlashing: Bool
     let action: () -> Void
 
     @GestureState private var isPressed: Bool = false
@@ -764,6 +802,9 @@ private struct SplitPane: View {
                     endRadius: max(geo.size.width, geo.size.height) * 0.55
                 )
                 StationIceGrain.overlay(opacity: isPressed ? 0.32 : 0.11)
+                StationChrome.ice
+                    .opacity(isFlashing ? 0.16 : 0)
+                    .animation(.easeOut(duration: 0.16), value: isFlashing)
                 StationHazeLabel(
                     text: displayTitle,
                     fontSize: fontSize,

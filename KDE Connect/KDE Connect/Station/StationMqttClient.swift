@@ -34,6 +34,7 @@ enum StationEvent {
 
     func payload() -> [String: Any] {
         var payload: [String: Any] = [
+            "id": UUID().uuidString,
             "ts": Int64(Date().timeIntervalSince1970 * 1000),
             "src": StationMqttClient.source,
             "event": name,
@@ -57,11 +58,22 @@ final class StationMqttClient: CocoaMQTTDelegate {
     static let source = "ios-remote"
     private static let qos = CocoaMQTTQoS.qos1
 
+    private struct PendingPublish {
+        let topic: String
+        let json: String
+        let queuedAt: Date
+    }
+
     private var mqtt: CocoaMQTT?
     private weak var listener: StationMqttListener?
     private let stationId: String
     private let brokerUri: String
     private let logger = Logger(category: "StationMqttClient")
+    private let stateLock = NSLock()
+    private var connectionReady = false
+    private var pendingPublishes: [PendingPublish] = []
+    private let maxPendingPublishes = 32
+    private let pendingPublishTTL: TimeInterval = 3
 
     private var controlTopic: String {
         "station/\(stationId)/ui/control"
@@ -102,28 +114,53 @@ final class StationMqttClient: CocoaMQTTDelegate {
 
     func disconnect() {
         logger.info("Disconnecting")
+        stateLock.lock()
+        connectionReady = false
+        pendingPublishes.removeAll()
+        stateLock.unlock()
+        mqtt?.autoReconnect = false
         mqtt?.disconnect()
         mqtt = nil
     }
 
-    func publishEvent(_ event: StationEvent) {
-        guard let mqtt = mqtt else {
-            logger.error("Cannot publish: mqtt is nil")
+    private func publish(_ json: String, to topic: String) {
+        guard let mqtt else {
+            logger.error("Cannot publish: MQTT client is not initialized")
             return
         }
+
+        stateLock.lock()
+        let ready = connectionReady
+        if !ready {
+            let now = Date()
+            pendingPublishes = pendingPublishes.filter {
+                now.timeIntervalSince($0.queuedAt) < pendingPublishTTL
+            }
+            if pendingPublishes.count >= maxPendingPublishes {
+                pendingPublishes.removeFirst()
+            }
+            pendingPublishes.append(PendingPublish(topic: topic, json: json, queuedAt: now))
+        }
+        stateLock.unlock()
+
+        if ready {
+            mqtt.publish(topic, withString: json, qos: Self.qos, retained: false)
+        } else {
+            logger.info("Queueing MQTT event until reconnect")
+        }
+    }
+
+    func publishEvent(_ event: StationEvent) {
         let payload = event.payload()
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
         logger.info("Publishing to \(self.eventTopic): \(json)")
-        mqtt.publish(eventTopic, withString: json, qos: Self.qos, retained: false)
+        publish(json, to: eventTopic)
     }
 
     func publishRemoteSlider(value: Double, seq: Int, confirm: Bool = false) {
-        guard let mqtt = mqtt else {
-            logger.error("Cannot publish slider: mqtt is nil")
-            return
-        }
         let payload: [String: Any] = [
+            "id": UUID().uuidString,
             "ts": Int64(Date().timeIntervalSince1970 * 1000),
             "src": StationMqttClient.source,
             "event": "remote_slider",
@@ -136,15 +173,12 @@ final class StationMqttClient: CocoaMQTTDelegate {
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
         logger.info("Publishing slider to \(self.eventTopic): \(json)")
-        mqtt.publish(eventTopic, withString: json, qos: Self.qos, retained: false)
+        publish(json, to: eventTopic)
     }
 
     func publishRemoteOperator(_ action: String) {
-        guard let mqtt = mqtt else {
-            logger.error("Cannot publish operator: mqtt is nil")
-            return
-        }
         let payload: [String: Any] = [
+            "id": UUID().uuidString,
             "ts": Int64(Date().timeIntervalSince1970 * 1000),
             "src": StationMqttClient.source,
             "event": "operator_\(action)",
@@ -153,7 +187,7 @@ final class StationMqttClient: CocoaMQTTDelegate {
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
         logger.info("Publishing operator to \(self.eventTopic): \(json)")
-        mqtt.publish(eventTopic, withString: json, qos: Self.qos, retained: false)
+        publish(json, to: eventTopic)
     }
 
     func publishRemoteKey(
@@ -162,10 +196,6 @@ final class StationMqttClient: CocoaMQTTDelegate {
         alt: Bool = false,
         shift: Bool = false
     ) {
-        guard let mqtt = mqtt else {
-            logger.error("Cannot publish remote key: mqtt is nil")
-            return
-        }
         var data: [String: Any] = [:]
         if let key, !key.isEmpty {
             data["key"] = key
@@ -176,6 +206,7 @@ final class StationMqttClient: CocoaMQTTDelegate {
         if alt { data["alt"] = true }
         if shift { data["shift"] = true }
         let payload: [String: Any] = [
+            "id": UUID().uuidString,
             "ts": Int64(Date().timeIntervalSince1970 * 1000),
             "src": StationMqttClient.source,
             "event": "remote_key",
@@ -184,17 +215,35 @@ final class StationMqttClient: CocoaMQTTDelegate {
         guard let encoded = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: encoded, encoding: .utf8) else { return }
         logger.info("Publishing remote key to \(self.eventTopic): \(json)")
-        mqtt.publish(eventTopic, withString: json, qos: Self.qos, retained: false)
+        publish(json, to: eventTopic)
     }
 
     // MARK: - CocoaMQTTDelegate
 
     func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
         logger.info("Connect ack: \(ack)")
-        if ack == .accept {
-            logger.info("Subscribing to \(self.controlTopic) and \(self.eventTopic)")
-            mqtt.subscribe(controlTopic, qos: Self.qos)
-            mqtt.subscribe(eventTopic, qos: Self.qos)
+        guard ack == .accept else {
+            stateLock.lock()
+            connectionReady = false
+            stateLock.unlock()
+            return
+        }
+
+        stateLock.lock()
+        connectionReady = true
+        let now = Date()
+        let queued = pendingPublishes.filter {
+            now.timeIntervalSince($0.queuedAt) < pendingPublishTTL
+        }
+        pendingPublishes.removeAll()
+        stateLock.unlock()
+
+        logger.info("Subscribing to \(self.controlTopic) and \(self.eventTopic)")
+        mqtt.subscribe(controlTopic, qos: Self.qos)
+        mqtt.subscribe(eventTopic, qos: Self.qos)
+        for item in queued {
+            logger.info("Flushing queued MQTT event")
+            mqtt.publish(item.topic, withString: item.json, qos: Self.qos, retained: false)
         }
     }
 
@@ -214,7 +263,7 @@ final class StationMqttClient: CocoaMQTTDelegate {
         else { return }
 
         if message.topic == controlTopic || message.topic.hasSuffix("/ui/control") {
-            if payload["ts"] == nil || payload["src"] == nil || payload["action"] == nil {
+            if payload["ts"] == nil || !(payload["src"] is String) || !(payload["action"] is String) {
                 return
             }
             listener?.onControlMessage(payload)
@@ -231,6 +280,7 @@ final class StationMqttClient: CocoaMQTTDelegate {
     /// remote already understands (letters / yes-no / slider / hidden).
     static func keyboardFocusControl(from payload: [String: Any]) -> [String: Any]? {
         guard (payload["event"] as? String) == "keyboard_focus" else { return nil }
+        guard let ts = payload["ts"], let src = payload["src"] as? String else { return nil }
         let data = dictionary(payload["data"]) ?? [:]
         let mode = (data["mode"] as? String) ?? (payload["mode"] as? String) ?? ""
         let action: String
@@ -244,8 +294,8 @@ final class StationMqttClient: CocoaMQTTDelegate {
         default: return nil
         }
         var control: [String: Any] = [
-            "ts": payload["ts"] as Any,
-            "src": payload["src"] as Any,
+            "ts": ts,
+            "src": src,
             "action": action,
         ]
         if let left = (data["left"] as? String) ?? (payload["left"] as? String), !left.isEmpty {
@@ -295,6 +345,9 @@ final class StationMqttClient: CocoaMQTTDelegate {
     func mqttDidReceivePong(_ mqtt: CocoaMQTT) {}
 
     func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError err: Error?) {
+        stateLock.lock()
+        connectionReady = false
+        stateLock.unlock()
         logger.error("Disconnected: \(err?.localizedDescription ?? "no error")")
     }
 
@@ -304,6 +357,51 @@ final class StationMqttClient: CocoaMQTTDelegate {
 
     func mqtt(_ mqtt: CocoaMQTT, didReceiveTrust trust: SecTrust, completionHandler: @escaping (Bool) -> Void) {
         completionHandler(true)
+    }
+}
+
+/// Suppresses retained-control + ui/event duplicates and stale MQTT delivery.
+/// The station bridge publishes a control message and the corresponding
+/// keyboard_focus event separately; both describe the same displayed state.
+struct StationFocusControlGate {
+    private(set) var lastSignature: String = ""
+    private(set) var lastTimestamp: Int64?
+
+    mutating func accept(_ control: [String: Any]) -> Bool {
+        let signature = Self.signature(for: control)
+        guard !signature.isEmpty else { return false }
+        let timestamp = Self.int64(control["ts"])
+        if let lastTimestamp, let timestamp, timestamp < lastTimestamp {
+            return false
+        }
+        guard signature != lastSignature else {
+            if let timestamp, timestamp > (lastTimestamp ?? 0) {
+                lastTimestamp = timestamp
+            }
+            return false
+        }
+        lastSignature = signature
+        if let timestamp {
+            lastTimestamp = max(timestamp, lastTimestamp ?? timestamp)
+        }
+        return true
+    }
+
+    static func signature(for control: [String: Any]) -> String {
+        let action = control["action"] as? String ?? ""
+        guard !action.isEmpty else { return "" }
+        let left = control["left"] as? String ?? ""
+        let right = control["right"] as? String ?? ""
+        let prompt = (control["prompt"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return [action, left, right, prompt].joined(separator: "\u{1}")
+    }
+
+    private static func int64(_ value: Any?) -> Int64? {
+        if let value = value as? NSNumber { return value.int64Value }
+        if let value = value as? Int64 { return value }
+        if let value = value as? Int { return Int64(value) }
+        return nil
     }
 }
 
