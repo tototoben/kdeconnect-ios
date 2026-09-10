@@ -54,6 +54,7 @@ struct KeyboardOnlyView: View {
     @State private var lastLocalSliderAt: Date?
     @State private var mqttLog: [String] = []
     @State private var lastMqttControl: String = ""
+    @State private var introDiagnostics: String = ""
 
     /// True when Guided Access is active — all config/debug UI is hidden.
     private var isKiosk: Bool { isGuidedAccessActive }
@@ -144,6 +145,10 @@ struct KeyboardOnlyView: View {
                         onChange: sendSlider,
                         onConfirm: confirmSlider
                     )
+                } else if focusMode == .intro {
+                    IntroFinishView {
+                        mqttCoordinator?.publishRemoteOperator("finish_intro")
+                    }
                 }
             }
             .id(focusEpoch)
@@ -197,6 +202,14 @@ struct KeyboardOnlyView: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.7)
                         .padding(.horizontal, 24)
+                        .padding(.top, 4)
+                }
+                if !introDiagnostics.isEmpty {
+                    Text(introDiagnostics)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(StationChrome.ice.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 18)
                         .padding(.top, 4)
                 }
                 if settings.stationMqttDebug && !lastMqttControl.isEmpty {
@@ -514,6 +527,17 @@ struct KeyboardOnlyView: View {
                 focusMode = .scale
                 focusPrompt = prompt
                 hasTyped = true
+                introDiagnostics = ""
+            case "introRecording":
+                focusMode = .intro
+                focusPrompt = prompt
+                hasTyped = false
+                introDiagnostics = ""
+            case "introDiagnostics":
+                focusMode = .hidden
+                focusPrompt = ""
+                hasTyped = false
+                introDiagnostics = formatIntroDiagnostics(control["diagnostics"])
             case "keyboardHidden":
                 focusMode = .hidden
                 focusPrompt = ""
@@ -522,6 +546,19 @@ struct KeyboardOnlyView: View {
                 break
             }
         }
+    }
+
+    private func formatIntroDiagnostics(_ raw: Any?) -> String {
+        guard let diagnostics = raw as? [String: Any] else {
+            return "INTRO CAPTURE COMPLETE"
+        }
+        let chars = (diagnostics["capturedChars"] as? NSNumber)?.intValue
+            ?? (diagnostics["chars"] as? NSNumber)?.intValue
+            ?? 0
+        let speech = (diagnostics["speechChars"] as? NSNumber)?.intValue ?? 0
+        let whisper = (diagnostics["whisperChars"] as? NSNumber)?.intValue ?? 0
+        let reason = (diagnostics["finishReason"] as? String ?? "timer").uppercased()
+        return "CAPTURED \(chars) CHARS · SPEECH \(speech) · WHISPER \(whisper) · \(reason)"
     }
 
     /// What the remote actually displays for a focus message. The kiosk
@@ -595,7 +632,33 @@ enum InputFocusMode {
     case numeric
     case choice
     case scale
+    case intro
     case hidden
+}
+
+private struct IntroFinishView: View {
+    let onFinish: () -> Void
+
+    var body: some View {
+        VStack(spacing: 22) {
+            StationHazeLabel(
+                text: "INTRODUCTION IN PROGRESS",
+                fontSize: 20,
+                light: true,
+                kerning: 2.2
+            )
+            FocusButton(
+                title: "FINISH EARLY",
+                width: 360,
+                height: 92,
+                isAccent: true,
+                isArmed: true,
+                action: onFinish
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+    }
 }
 
 /// Invisible operator chords for when the letter keyboard is hidden

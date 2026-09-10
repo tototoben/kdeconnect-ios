@@ -66,6 +66,28 @@ class KDE_Connect_Tests: XCTestCase {
         )
     }
 
+    func testStationMqttMapsKeyboardFocusAndIntroDiagnostics() {
+        let focus = StationMqttClient.control(from: [
+            "event": "keyboard_focus",
+            "data": [
+                "mode": "yesno",
+                "prompt": "Ready?",
+                "left": "YES",
+                "right": "NO",
+            ],
+        ])
+        XCTAssertEqual(focus?["action"] as? String, "yesNoFocused")
+        XCTAssertEqual(focus?["prompt"] as? String, "Ready?")
+
+        let diagnostics = StationMqttClient.control(from: [
+            "event": "intro_diagnostics",
+            "data": ["capturedChars": 42, "finishReason": "early"],
+        ])
+        XCTAssertEqual(diagnostics?["action"] as? String, "introDiagnostics")
+        let captured = (diagnostics?["diagnostics"] as? [String: Any])?["capturedChars"] as? Int
+        XCTAssertEqual(captured, 42)
+    }
+
     func testPerformanceExample() throws {
         // This is an example of a performance test case.
         self.measure {

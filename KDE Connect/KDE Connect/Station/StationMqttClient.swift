@@ -222,16 +222,31 @@ final class StationMqttClient: CocoaMQTTDelegate {
         }
 
         if message.topic == eventTopic || message.topic.hasSuffix("/ui/event") {
-            guard let control = Self.keyboardFocusControl(from: payload) else { return }
+            guard let control = Self.control(from: payload) else { return }
             listener?.onControlMessage(control)
         }
     }
 
-    /// Maps a kiosk `keyboard_focus` event onto the same control actions the
-    /// remote already understands (letters / yes-no / slider / hidden).
-    static func keyboardFocusControl(from payload: [String: Any]) -> [String: Any]? {
-        guard (payload["event"] as? String) == "keyboard_focus" else { return nil }
+    /// Maps kiosk UI events onto the control actions the remote understands.
+    /// `keyboard_focus` drives ordinary input; the Station III transcript
+    /// event drives the post-capture diagnostics panel.
+    static func control(from payload: [String: Any]) -> [String: Any]? {
+        let event = payload["event"] as? String
         let data = dictionary(payload["data"]) ?? [:]
+        if event == "intro_diagnostics" {
+            var control: [String: Any] = [
+                "ts": payload["ts"] as Any,
+                "src": payload["src"] as Any,
+                "action": "introDiagnostics",
+            ]
+            if let diagnostics = dictionary(data["diagnostics"]) {
+                control["diagnostics"] = diagnostics
+            } else {
+                control["diagnostics"] = data
+            }
+            return control
+        }
+        guard event == "keyboard_focus" else { return nil }
         let mode = (data["mode"] as? String) ?? (payload["mode"] as? String) ?? ""
         let action: String
         switch mode {
@@ -267,6 +282,11 @@ final class StationMqttClient: CocoaMQTTDelegate {
             control["seq"] = seq
         }
         return control
+    }
+
+    /// Compatibility name used by the simulator loopback and unit tests.
+    static func keyboardFocusControl(from payload: [String: Any]) -> [String: Any]? {
+        control(from: payload)
     }
 
     private static func dictionary(_ value: Any?) -> [String: Any]? {
