@@ -122,7 +122,8 @@ struct KeyboardOnlyView: View {
                         },
                         scale: 1.22,
                         submitArmed: hasTyped,
-                        showNumberRow: true
+                        showNumberRow: true,
+                        numbersOnly: true
                     )
                 } else if focusMode == .choice {
                     SplitChoiceView(

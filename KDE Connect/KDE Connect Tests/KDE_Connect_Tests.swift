@@ -79,6 +79,12 @@ class KDE_Connect_Tests: XCTestCase {
         XCTAssertEqual(focus?["action"] as? String, "yesNoFocused")
         XCTAssertEqual(focus?["prompt"] as? String, "Ready?")
 
+        let numeric = StationMqttClient.control(from: [
+            "event": "keyboard_focus",
+            "data": ["mode": "numeric", "prompt": "What is your age?"],
+        ])
+        XCTAssertEqual(numeric?["action"] as? String, "numericFocused")
+
         let diagnostics = StationMqttClient.control(from: [
             "event": "intro_diagnostics",
             "data": ["capturedChars": 42, "finishReason": "early"],

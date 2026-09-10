@@ -250,7 +250,7 @@ final class StationMqttClient: CocoaMQTTDelegate {
         let mode = (data["mode"] as? String) ?? (payload["mode"] as? String) ?? ""
         let action: String
         switch mode {
-        case "numeric": action = "textFocused" // number row lives on the letter keyboard
+        case "numeric": action = "numericFocused"
         case "yesno": action = "yesNoFocused"
         case "choice": action = "choiceFocused"
         case "scale": action = "scaleFocused"

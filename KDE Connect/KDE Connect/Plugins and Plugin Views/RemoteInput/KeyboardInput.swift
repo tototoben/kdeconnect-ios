@@ -198,6 +198,7 @@ struct StationKeyboardRootView: View {
     var scale: CGFloat = 1.0
     var submitArmed: Bool = false
     var showNumberRow: Bool = true
+    var numbersOnly: Bool = false
 
     @ObservedObject private var settings = KdeConnectSettings.shared
 
@@ -206,6 +207,13 @@ struct StationKeyboardRootView: View {
 
     @State private var shiftActive: Bool = false
     @State private var altActive: Bool = false
+    /// Optional operator override for prompts whose focus metadata is stale.
+    /// `nil` follows the kiosk's automatic numeric-mode choice.
+    @State private var numberRowOverride: Bool?
+
+    private var numberRowVisible: Bool {
+        numberRowOverride ?? showNumberRow
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -215,20 +223,28 @@ struct StationKeyboardRootView: View {
             let innerH = max(geo.size.height - pad * 2, 1)
             let actionW = min(max(innerW * 0.18, 96), 132)
             let leftW = max(innerW - gap - actionW, 1)
-            let modifierH = min(max(innerH * 0.13, 52), 68)
-            let keysH = max(innerH - modifierH - gap, 1)
+            let modifierH = numbersOnly ? 0 : min(max(innerH * 0.13, 52), 68)
+            let keysH = max(innerH - modifierH - (numbersOnly ? 0 : gap), 1)
             let letterFont = min(keysH * 0.09, 30)
             let modifierFont = min(modifierH * 0.28, 16)
             let actionIcon = min(actionW * 0.28, 28)
 
             HStack(alignment: .top, spacing: gap) {
                 VStack(alignment: .leading, spacing: gap) {
-                    HStack(spacing: gap) {
+                    if !numbersOnly {
+                        HStack(spacing: gap) {
                         ModifierKeyButton(
                             title: settings.keyboardLayout.shortLabel,
                             fontSize: modifierFont
                         ) {
                             settings.keyboardLayout = settings.keyboardLayout.next
+                        }
+                        ModifierKeyButton(
+                            title: "123",
+                            isActive: numberRowVisible,
+                            fontSize: modifierFont
+                        ) {
+                            numberRowOverride = !numberRowVisible
                         }
                         ModifierKeyButton(title: "Shift", isActive: shiftActive, fontSize: modifierFont) {
                             shiftActive.toggle()
@@ -241,11 +257,24 @@ struct StationKeyboardRootView: View {
                         ModifierKeyButton(title: "Tab", fontSize: modifierFont) {
                             onTab()
                         }
+                        }
+                        .frame(width: leftW, height: modifierH)
+                        .onChange(of: showNumberRow) { _ in
+                            numberRowOverride = nil
+                        }
                     }
-                    .frame(width: leftW, height: modifierH)
 
                     VStack(spacing: gap) {
-                        if showNumberRow {
+                        if numbersOnly {
+                            HStack(spacing: gap) {
+                                ForEach(KeyboardLayout.numberRow, id: \.self) { digit in
+                                    KeyButton(title: digit, fontSize: letterFont) {
+                                        onKey(digit)
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if numberRowVisible {
                             HStack(spacing: gap) {
                                 ForEach(KeyboardLayout.numberRow, id: \.self) { digit in
                                     KeyButton(title: digit, fontSize: letterFont) {
