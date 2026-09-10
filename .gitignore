@@ -154,3 +154,7 @@ Dependencies/
 
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,swift,objective-c
+
+# Vendored binary xcframeworks (e.g. OpenSSL) - Xcode resolves these
+# via Swift Package Manager (XCRemoteSwiftPackageReference), not this dir.
+Frameworks/
