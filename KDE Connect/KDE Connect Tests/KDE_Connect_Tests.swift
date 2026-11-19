@@ -32,26 +32,24 @@ class KDE_Connect_Tests: XCTestCase {
     }
 
     func testScaleRatingMappingUsesNormalizedEndpoints() {
-        XCTAssertEqual(ScaleRatingMapping.value(for: 1), 0.0, accuracy: 0.0001)
+        XCTAssertEqual(ScaleRatingMapping.value(for: 0), 0.0, accuracy: 0.0001)
+        XCTAssertEqual(ScaleRatingMapping.value(for: 5), 0.5, accuracy: 0.0001)
         XCTAssertEqual(ScaleRatingMapping.value(for: 10), 1.0, accuracy: 0.0001)
     }
 
     func testScaleRatingMappingRoundsToNearestRating() {
-        XCTAssertEqual(ScaleRatingMapping.rating(for: 0.0), 1)
-        XCTAssertEqual(ScaleRatingMapping.rating(for: 0.51), 6)
+        XCTAssertEqual(ScaleRatingMapping.rating(for: 0.0), 0)
+        XCTAssertEqual(ScaleRatingMapping.rating(for: 0.5), 5)
+        XCTAssertEqual(ScaleRatingMapping.rating(for: 0.84), 8)
         XCTAssertEqual(ScaleRatingMapping.rating(for: 1.0), 10)
     }
 
-    func testScaleRatingMappingHasTenSelectableRatings() {
-        let values = (1...10).map { ScaleRatingMapping.value(for: $0) }
-        let expected = [
-            0.0, 1.0 / 9.0, 2.0 / 9.0, 3.0 / 9.0, 4.0 / 9.0,
-            5.0 / 9.0, 6.0 / 9.0, 7.0 / 9.0, 8.0 / 9.0, 1.0,
-        ]
-
-        XCTAssertEqual(values.count, expected.count)
-        for (actual, expected) in zip(values, expected) {
-            XCTAssertEqual(actual, expected, accuracy: 0.0001)
+    func testScaleRatingMappingHasElevenSelectableRatings() {
+        XCTAssertEqual(ScaleRatingMapping.ratings, Array(0...10))
+        let values = ScaleRatingMapping.ratings.map { ScaleRatingMapping.value(for: $0) }
+        let expected = (0...10).map { Double($0) / 10.0 }
+        for (value, want) in zip(values, expected) {
+            XCTAssertEqual(value, want, accuracy: 0.0001)
         }
     }
 

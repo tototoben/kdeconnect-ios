@@ -7,16 +7,24 @@
 import SwiftUI
 import UIKit
 
+/// The kiosk's "how smart should your partner be?" scale: 0–10, with 5 in
+/// the exact middle. Values travel as 0...1 (`rating / 10`), the same mapping
+/// orb-platform uses, so 0, 5 and 10 agree on the iPad and the kiosk.
 enum ScaleRatingMapping {
+    static let minRating = 0
+    static let maxRating = 10
+    static let ratings = Array(minRating...maxRating)
+
     static func value(for rating: Int) -> Double {
-        let clamped = min(10, max(1, rating))
-        return Double(clamped - 1) / 9.0
+        let clamped = min(maxRating, max(minRating, rating))
+        return Double(clamped - minRating) / Double(maxRating - minRating)
     }
 
     static func rating(for value: Double) -> Int {
-        guard value.isFinite else { return 1 }
+        guard value.isFinite else { return minRating }
         let clamped = min(1.0, max(0.0, value))
-        return min(10, max(1, Int((clamped * 9.0).rounded()) + 1))
+        let steps = Double(maxRating - minRating)
+        return min(maxRating, max(minRating, minRating + Int((clamped * steps).rounded())))
     }
 }
 
@@ -728,8 +736,8 @@ struct ScaleSliderFocusView: View {
                         kerning: 2.4
                     )
                 }
-                ScaleRatingRow(value: $value, onChange: onChange)
-                    .frame(height: min(112, geo.size.height * 0.34))
+                ScaleSliderTrack(value: $value, onChange: onChange)
+                    .frame(height: min(132, geo.size.height * 0.38))
                 FocusButton(
                     title: "CONFIRM",
                     width: innerW,
@@ -748,28 +756,86 @@ struct ScaleSliderFocusView: View {
     }
 }
 
-private struct ScaleRatingRow: View {
+/// Drag-to-pick 0–10 slider. It snaps to whole ratings and reports each new
+/// one through `onChange`, which also moves the kiosk's slider live.
+private struct ScaleSliderTrack: View {
     @Binding var value: Double
     let onChange: (Double) -> Void
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 10)
+    @State private var dragging = false
+    private let thumbSize: CGFloat = 58
 
     var body: some View {
         GeometryReader { geo in
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(1...10, id: \.self) { rating in
-                    FocusButton(
-                        title: "\(rating)",
-                        width: max((geo.size.width - 72) / 10, 1),
-                        height: min(82, geo.size.height),
-                        isAccent: true,
-                        isArmed: ScaleRatingMapping.rating(for: value) == rating
-                    ) {
-                        let next = ScaleRatingMapping.value(for: rating)
-                        value = next
-                        onChange(next)
-                    }
+            let usable = max(geo.size.width - thumbSize, 1)
+            let rating = ScaleRatingMapping.rating(for: value)
+            let fraction = CGFloat(ScaleRatingMapping.value(for: rating))
+            let midY = geo.size.height * 0.4
+            let xFor: (Int) -> CGFloat = { tick in
+                thumbSize / 2 + usable * CGFloat(ScaleRatingMapping.value(for: tick))
+            }
+
+            ZStack {
+                Capsule()
+                    .fill(StationChrome.ice.opacity(0.22))
+                    .frame(width: usable, height: 4)
+                    .position(x: geo.size.width / 2, y: midY)
+                Capsule()
+                    .fill(StationChrome.ice)
+                    .frame(width: max(usable * fraction, 0.5), height: 4)
+                    .position(x: thumbSize / 2 + usable * fraction / 2, y: midY)
+                    .shadow(color: StationChrome.ice.opacity(0.6), radius: 6)
+                ForEach(ScaleRatingMapping.ratings, id: \.self) { tick in
+                    Rectangle()
+                        .fill(StationChrome.ice.opacity(tick <= rating ? 0.95 : 0.35))
+                        .frame(width: 2, height: tick == 5 ? 24 : 12)
+                        .position(x: xFor(tick), y: midY)
                 }
+                ForEach([0, 5, 10], id: \.self) { label in
+                    Text("\(label)")
+                        .font(StationChrome.labelFont(size: 17))
+                        .foregroundColor(StationChrome.quiet)
+                        .position(x: xFor(label), y: midY + thumbSize / 2 + 20)
+                }
+                Circle()
+                    .fill(StationChrome.frost)
+                    .overlay(Circle().stroke(StationChrome.ice, lineWidth: 2))
+                    .overlay(
+                        Text("\(rating)")
+                            .font(StationChrome.labelFont(size: 24))
+                            .foregroundColor(StationChrome.ice)
+                    )
+                    .frame(width: thumbSize, height: thumbSize)
+                    .shadow(color: StationChrome.ice.opacity(dragging ? 0.75 : 0.45), radius: dragging ? 18 : 10)
+                    .scaleEffect(dragging ? 1.08 : 1)
+                    .position(x: xFor(rating), y: midY)
+                    .animation(.easeOut(duration: 0.12), value: rating)
+                    .animation(.easeOut(duration: 0.14), value: dragging)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        dragging = true
+                        let raw = (gesture.location.x - thumbSize / 2) / usable
+                        let next = ScaleRatingMapping.rating(for: Double(min(1, max(0, raw))))
+                        guard next != ScaleRatingMapping.rating(for: value) else { return }
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        let nextValue = ScaleRatingMapping.value(for: next)
+                        value = nextValue
+                        onChange(nextValue)
+                    }
+                    .onEnded { _ in dragging = false }
+            )
+            .accessibilityElement()
+            .accessibilityLabel("Rating")
+            .accessibilityValue("\(rating) of \(ScaleRatingMapping.maxRating)")
+            .accessibilityAdjustableAction { direction in
+                let step = direction == .increment ? 1 : -1
+                let next = min(ScaleRatingMapping.maxRating, max(ScaleRatingMapping.minRating, rating + step))
+                let nextValue = ScaleRatingMapping.value(for: next)
+                value = nextValue
+                onChange(nextValue)
             }
         }
         .padding(.horizontal, 4)
